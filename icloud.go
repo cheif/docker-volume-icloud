@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -42,18 +41,25 @@ type iCloudDrive struct {
 	client http.Client
 }
 
-func (drive *iCloudDrive) GetRootNode() *iCloudNode {
+func (drive *iCloudDrive) GetRootNode() (*iCloudNode, error) {
 	return drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
 }
 
-func (drive *iCloudDrive) GetNodeData(item *iCloudNode) *iCloudNode {
-	//log.Println("Fetching data for", item)
-	//log.Println("drivewsid", item.drivewsid)
-	// TODO: Check if we already have all data?
-	return drive.getNodeData(item.drivewsid)
+func (drive *iCloudDrive) GetNodeData(node *iCloudNode) (*iCloudNode, error) {
+	// This is a proxy for if this node already has all data, or if we need to fetch it to get children etc.
+	if !node.shallow {
+		return node, nil
+	}
+	data, err := drive.getNodeData(node.drivewsid)
+	if err != nil {
+		return nil, err
+	}
+	node.children = data.children
+	node.shallow = false
+	return node, nil
 }
 
-func (drive *iCloudDrive) getNodeData(drivewsid string) *iCloudNode {
+func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	payload := []GetNodeDataRequest{
 		GetNodeDataRequest{
 			Drivewsid: drivewsid,
@@ -63,23 +69,21 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) *iCloudNode {
 	json.NewEncoder(buf).Encode(payload)
 	req, err := http.NewRequest("POST", "https://p63-drivews.icloud.com/retrieveItemDetailsInFolders", buf)
 	if err != nil {
-		log.Fatalf("Request creation fail: %v\n", err)
+		return nil, err
 	}
 	req.Header.Add("Origin", "https://www.icloud.com")
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Accept", "application/json")
 	resp, err := drive.client.Do(req)
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		return nil, err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		return nil, err
 	}
-	//log.Println("body:", string(body))
 	response := new([]GetNodeDataResponse)
 	json.Unmarshal(body, &response)
-	//log.Println("response:", response)
 	node := (*response)[0]
 	var children []iCloudNode
 	for _, item := range node.Items {
@@ -87,6 +91,7 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) *iCloudNode {
 			drivewsid: item.Drivewsid,
 			docwsid:   item.Docwsid,
 			zone:      item.Zone,
+			shallow:   true,
 			Name:      item.Name,
 			Size:      item.Size,
 			Extension: item.Extension,
@@ -97,56 +102,54 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) *iCloudNode {
 		drivewsid: node.Drivewsid,
 		docwsid:   node.Docwsid,
 		zone:      node.Zone,
+		shallow:   false,
 		Name:      node.Name,
 		Size:      node.Size,
 		Extension: node.Extension,
 		Etag:      node.Etag,
 		children:  &children,
-	}
+	}, nil
 }
 
-func (drive *iCloudDrive) GetChildren(node *iCloudNode) []iCloudNode {
-	if node.children != nil {
-		return *node.children
+func (drive *iCloudDrive) GetChildren(node *iCloudNode) (*[]iCloudNode, error) {
+	node, err := drive.GetNodeData(node)
+	if err != nil {
+		return nil, err
 	}
-	data := drive.GetNodeData(node)
-	node.children = data.children
-	return *node.children
+	return node.children, nil
 }
 
-func (drive *iCloudDrive) GetData(node *iCloudNode) []byte {
+func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
 	req, err := http.NewRequest(
 		"GET",
 		fmt.Sprintf("https://p63-docws.icloud.com/ws/%s/download/by_id?document_id=%s", node.zone, node.docwsid),
 		nil,
 	)
 	if err != nil {
-		log.Fatalf("Request creation fail: %v\n", err)
+		return nil, err
 	}
 	req.Header.Add("Origin", "https://www.icloud.com")
 	resp, err := drive.client.Do(req)
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		return nil, err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		return nil, err
 	}
-	//log.Println("body:", string(body))
 	response := new(DownloadInfo)
 	json.Unmarshal(body, &response)
 
 	req, err = http.NewRequest("GET", response.DataToken.Url, nil)
 	if err != nil {
-		log.Fatalf("Request creation fail: %v\n", err)
+		return nil, err
 	}
 	req.Header.Add("Origin", "https://www.icloud.com")
 	resp, err = drive.client.Do(req)
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		return nil, err
 	}
-	body, err = ioutil.ReadAll(resp.Body)
-	return body
+	return ioutil.ReadAll(resp.Body)
 }
 
 type GetNodeDataRequest struct {
@@ -188,6 +191,7 @@ type iCloudNode struct {
 	drivewsid string
 	zone      string
 	docwsid   string
+	shallow   bool
 	Name      string
 	Size      uint64
 	Extension *string

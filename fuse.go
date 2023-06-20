@@ -19,7 +19,6 @@ type iCloudInode struct {
 }
 
 func (inode *iCloudInode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	log.Println("Getattr", inode.node)
 	out.Attr.Size = inode.node.Size
 	return 0
 }
@@ -27,8 +26,14 @@ func (inode *iCloudInode) Getattr(ctx context.Context, fh fs.FileHandle, out *fu
 var _ = (fs.NodeReaddirer)((*iCloudInode)(nil))
 
 func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	log.Println("Lookup", inode.node)
-	for _, node := range inode.drive.GetChildren(inode.node) {
+	log.Printf("Lookup: %s/%s", inode.node.Filename(), name)
+	children, err := inode.drive.GetChildren(inode.node)
+	if err != nil {
+		log.Println("Error:", err)
+		// TODO: Probably wrong Errno here :/
+		return nil, 1
+	}
+	for _, node := range *children {
 		if node.Filename() == name {
 			return inode.generateInode(ctx, &node), 0
 		}
@@ -37,8 +42,13 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 }
 
 func (inode *iCloudInode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	children := inode.drive.GetChildren(inode.node)
-	return &iCloudDirStream{children}, 0
+	children, err := inode.drive.GetChildren(inode.node)
+	if err != nil {
+		log.Println("Error:", err)
+		// TODO: Probably wrong Errno here :/
+		return nil, 1
+	}
+	return &iCloudDirStream{*children}, 0
 }
 
 // DirStream implementation
@@ -101,7 +111,13 @@ func (inode *iCloudInode) Size() int {
 }
 
 func (inode *iCloudInode) Bytes(buf []byte) ([]byte, fuse.Status) {
-	return inode.drive.GetData(inode.node), 0
+	bytes, err := inode.drive.GetData(inode.node)
+	if err != nil {
+		log.Println("Error:", err)
+		// TODO: Probably wrong Errno here :/
+		return nil, fuse.EIO
+	}
+	return bytes, 0
 }
 
 func (r *iCloudInode) Done() {}
@@ -120,7 +136,10 @@ func main() {
 	drive := iCloudDrive{
 		client: client,
 	}
-	root := drive.GetRootNode()
+	root, err := drive.GetRootNode()
+	if err != nil {
+		log.Fatalf("Connecting to drive failed: %v\n", err)
+	}
 	inode := iCloudInode{
 		node:  root,
 		drive: drive,
