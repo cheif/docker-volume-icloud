@@ -152,6 +152,142 @@ func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
 	return ioutil.ReadAll(resp.Body)
 }
 
+func (drive *iCloudDrive) WriteData(node *iCloudNode, data []byte) error {
+	uploadData, err := drive.uploadFileData(node)
+	if err != nil {
+		return err
+	}
+	buf := bytes.NewBuffer(data)
+	req, err := http.NewRequest("POST", uploadData.Url, buf)
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	response := new(UploadFileResponse)
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return err
+	}
+	return drive.updateDocumentLink(node, response.SingleFile)
+}
+
+func (drive *iCloudDrive) uploadFileData(node *iCloudNode) (*UploadURLResponse, error) {
+	payload := UploadURLRequest{
+		Filename:    node.Filename(),
+		Type:        "FILE",
+		ContentType: "",
+	}
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	req, err := http.NewRequest(
+		"POST",
+		fmt.Sprintf("https://p63-docws.icloud.com/ws/%s/upload/web", node.zone),
+		buf,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	response := new([]UploadURLResponse)
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return nil, err
+	}
+	return &(*response)[0], nil
+}
+
+func (drive *iCloudDrive) updateDocumentLink(node *iCloudNode, fileData UploadFileData) error {
+	payload := UpdateDocumentLinkRequest{
+		DocumentId: node.docwsid,
+		Command:    "modify_file",
+		Data: UpdateDocumentData{
+			ReferenceSignature: fileData.ReferenceChecksum,
+			Signature:          fileData.FileChecksum,
+			WrappingKey:        fileData.WrappingKey,
+			Size:               fileData.Size,
+			Receipt:            fileData.Receipt,
+		},
+		/*
+			Path: UpdateDocumentPath{
+				StartingDocumentId: "",
+				Path:               node.Filename(),
+			},
+		*/
+	}
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	req, err := http.NewRequest(
+		"POST",
+		fmt.Sprintf("https://p63-docws.icloud.com/ws/%s/update/documents", node.zone),
+		buf,
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+	_, err = drive.client.Do(req)
+	return err
+}
+
+type UploadURLRequest struct {
+	Filename    string `json:"filename"`
+	Type        string `json:"type"`
+	ContentType string `json:"content_type"`
+}
+
+type UploadURLResponse struct {
+	DocumentId string `json:"document_id"`
+	Url        string `json:"url"`
+}
+
+type UploadFileResponse struct {
+	SingleFile UploadFileData `json:"singleFile"`
+}
+
+type UploadFileData struct {
+	ReferenceChecksum string `json:"referenceChecksum"`
+	FileChecksum      string `json:"fileChecksum"`
+	WrappingKey       string `json:"wrappingKey"`
+	Size              int    `json:"size"`
+	Receipt           string `json:"receipt"`
+}
+
+type UpdateDocumentLinkRequest struct {
+	DocumentId string             `json:"document_id"`
+	Command    string             `json:"command"`
+	Data       UpdateDocumentData `json:"data"`
+}
+
+type UpdateDocumentData struct {
+	ReferenceSignature string `json:"reference_signature"`
+	Signature          string `json:"signature"`
+	WrappingKey        string `json:"wrapping_key"`
+	Size               int    `json:"size"`
+	Receipt            string `json:"receipt"`
+}
+
+type UpdateDocumentPath struct {
+	StartingDocumentId string `json:"starting_document_id"`
+	Path               string `json:"path"`
+}
+
 type GetNodeDataRequest struct {
 	Drivewsid string `json:"drivewsid"`
 }
