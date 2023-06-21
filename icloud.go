@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -84,6 +85,10 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	}
 	response := new([]GetNodeDataResponse)
 	json.Unmarshal(body, &response)
+	if len(*response) == 0 {
+		return nil, fmt.Errorf("Error when parsing getNodeData response: %v", string(body))
+
+	}
 	node := (*response)[0]
 	var children []iCloudNode
 	for _, item := range node.Items {
@@ -117,6 +122,33 @@ func (drive *iCloudDrive) GetChildren(node *iCloudNode) (*[]iCloudNode, error) {
 		return nil, err
 	}
 	return node.children, nil
+}
+
+func (drive *iCloudDrive) GetNode(path string) (*iCloudNode, error) {
+	node, err := drive.GetRootNode()
+	if err != nil {
+		return nil, err
+	}
+	for _, component := range strings.Split(path, "/") {
+		if component == "" {
+			continue
+		}
+		var child *iCloudNode
+		for _, candidate := range *node.children {
+			if candidate.Filename() == component {
+				child = &candidate
+				break
+			}
+		}
+		if child == nil {
+			return nil, fmt.Errorf("Could not find component: %s", component)
+		}
+		node, err = drive.GetNodeData(child)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return node, nil
 }
 
 func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
