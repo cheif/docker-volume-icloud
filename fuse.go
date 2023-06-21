@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
-	"net/http"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -153,6 +151,7 @@ func (inode *iCloudInode) Flush(ctx context.Context, fh fs.FileHandle) syscall.E
 	return 0
 }
 
+/*
 func main() {
 	debug := flag.Bool("debug", false, "print debug data")
 	flag.Parse()
@@ -182,3 +181,4 @@ func main() {
 	}
 	server.Wait()
 }
+*/

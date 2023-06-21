@@ -8,7 +8,7 @@ RUN go install --ldflags '-extldflags "-static"'
 CMD ["/go/bin/docker-volume-icloud"]
 
 FROM alpine
-# RUN apk update && apk add sshfs
+RUN apk update && apk add fuse
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 COPY --from=builder /go/bin/docker-volume-icloud .
-CMD ["docker-volume-icloud"]
+CMD ["/docker-volume-icloud"]

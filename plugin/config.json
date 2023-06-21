@@ -1,0 +1,19 @@
+{
+  "description": "iCloud plugin for Docker",
+  "documentation": "https://docs.docker.com/engine/extend/plugins/",
+  "entrypoint": ["/docker-volume-icloud"],
+  "network": {
+    "type": "host"
+  },
+  "interface": {
+    "types": ["docker.volumedriver/1.0"],
+    "socket": "icloud.sock"
+  },
+  "linux": {
+    "capabilities": ["CAP_SYS_ADMIN"],
+    "devices": [{
+        "path": "/dev/fuse"
+    }]
+  },
+  "propagatedmount": "/mnt/volumes"
+}
