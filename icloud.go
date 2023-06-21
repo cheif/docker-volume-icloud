@@ -424,12 +424,3 @@ func (node *iCloudNode) Filename() string {
 		return node.Name
 	}
 }
-
-type SignInRequest struct {
-	Name     string `json:"accountName"`
-	Password string `json:"password"`
-}
-
-type SignInResponse struct {
-	AuthType string `json:"authType"`
-}
