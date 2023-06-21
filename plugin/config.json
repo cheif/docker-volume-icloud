@@ -2,6 +2,22 @@
   "description": "iCloud plugin for Docker",
   "documentation": "https://docs.docker.com/engine/extend/plugins/",
   "entrypoint": ["/docker-volume-icloud"],
+  "env": [
+      {
+          "name": "ACCESS_TOKEN",
+          "description": "Your iCloud access token. (The cookie named X-APPLE-WEBAUTH-TOKEN)",
+          "settable": [
+              "value"
+          ]
+      },
+      {
+          "name": "WEBAUTH_USER",
+          "description": "Your iCloud user token. (The cookie named X-APPLE-WEBAUTH-USER)",
+          "settable": [
+              "value"
+          ]
+      }
+  ],
   "network": {
     "type": "host"
   },

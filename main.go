@@ -31,12 +31,16 @@ type iCloudDriver struct {
 	volumes map[string]*iCloudVolume
 }
 
-func newIcloudDriver() (*iCloudDriver, error) {
+func newIcloudDriver(accessToken string, webauthUser string) (*iCloudDriver, error) {
 
 	client := http.Client{}
-	client.Jar = AuthenticatedJar()
+	client.Jar = AuthenticatedJar(accessToken, webauthUser)
 	drive := iCloudDrive{
 		client: client,
+	}
+	err := drive.ValidateToken()
+	if err != nil {
+		return nil, err
 	}
 
 	d := &iCloudDriver{
@@ -194,7 +198,15 @@ func logError(format string, args ...interface{}) error {
 
 func main() {
 	log.Println("Starting up..")
-	d, err := newIcloudDriver()
+	accessToken := os.Getenv("ACCESS_TOKEN")
+	if accessToken == "" {
+		log.Fatalf("ACCESS_TOKEN required!")
+	}
+	webauthUser := os.Getenv("WEBAUTH_USER")
+	if webauthUser == "" {
+		log.Fatalf("WEBAUTH_USER required!")
+	}
+	d, err := newIcloudDriver(accessToken, webauthUser)
 	if err != nil {
 		log.Fatal(err)
 	}

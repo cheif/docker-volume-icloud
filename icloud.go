@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,20 +27,64 @@ func NewCookieJar() *CookieJar {
 func (j *CookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	j.Lock()
 	defer j.Unlock()
-	// j.cookies = cookies
+	for _, cookie := range cookies {
+		j.cookies = append(j.cookies, cookie)
+	}
 }
 
 func (j *CookieJar) Cookies(u *url.URL) []*http.Cookie {
 	return j.cookies
 }
 
-func AuthenticatedJar() *CookieJar {
+func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 	jar := NewCookieJar()
+	jar.cookies = []*http.Cookie{
+		&http.Cookie{
+			Name:  "X-APPLE-WEBAUTH-TOKEN",
+			Value: accessToken,
+		},
+		&http.Cookie{
+			Name:  "X-APPLE-WEBAUTH-USER",
+			Value: webauthUser,
+		},
+	}
 	return jar
 }
 
 type iCloudDrive struct {
 	client http.Client
+}
+
+func (drive *iCloudDrive) ValidateToken() error {
+	req, err := http.NewRequest("POST", "https://setup.icloud.com/setup/ws/1/validate", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Accept", "application/json")
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	response := new(TokenResponse)
+	json.Unmarshal(body, &response)
+	if response == nil {
+		return fmt.Errorf("Unable to validate token")
+	}
+	log.Println("Validated token for:", response.DsInfo.PrimaryEmail)
+	return nil
+}
+
+type TokenResponse struct {
+	DsInfo DsInfo `json:"dsInfo"`
+}
+
+type DsInfo struct {
+	PrimaryEmail string `json:"primaryEmail"`
 }
 
 func (drive *iCloudDrive) GetRootNode() (*iCloudNode, error) {
@@ -87,7 +132,6 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	json.Unmarshal(body, &response)
 	if len(*response) == 0 {
 		return nil, fmt.Errorf("Error when parsing getNodeData response: %v", string(body))
-
 	}
 	node := (*response)[0]
 	var children []iCloudNode
