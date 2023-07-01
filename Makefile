@@ -3,15 +3,17 @@ plugin/rootfs: *.go
 	mkdir -p plugin/rootfs
 	docker export "`docker create --platform linux/amd64 docker-volume-icloud true`" | tar -x -C plugin/rootfs
 
-berglund.io/icloud: plugin/rootfs
-	- docker plugin disable berglund.io/icloud
-	- docker plugin rm berglund.io/icloud
-	docker plugin create berglund.io/icloud plugin
+cheif/icloud: plugin/rootfs
+	- docker plugin disable cheif/icloud
+	- docker plugin rm cheif/icloud
+	docker plugin create cheif/icloud plugin
 
+publish: cheif/icloud
+	docker plugin push cheif/icloud
 
-install: berglund.io/icloud
-	docker plugin set berglund.io/icloud ACCESS_TOKEN=$(ACCESS_TOKEN) WEBAUTH_USER=$(WEBAUTH_USER)
-	docker plugin enable berglund.io/icloud
+install: cheif/icloud
+	docker plugin set cheif/icloud ACCESS_TOKEN=$(ACCESS_TOKEN) WEBAUTH_USER=$(WEBAUTH_USER)
+	docker plugin enable cheif/icloud
 
 clean:
 	rm -rf plugin/rootfs
