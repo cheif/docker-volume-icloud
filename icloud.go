@@ -140,7 +140,7 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 			drivewsid: item.Drivewsid,
 			docwsid:   item.Docwsid,
 			zone:      item.Zone,
-			shallow:   true,
+			shallow:   item.Type == "FOLDER",
 			Name:      item.Name,
 			Size:      item.Size,
 			Extension: item.Extension,
