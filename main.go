@@ -197,6 +197,7 @@ func logError(format string, args ...interface{}) error {
 }
 
 func main() {
+	log.SetFlags(log.Lshortfile)
 	log.Println("Starting up..")
 	accessToken := os.Getenv("ACCESS_TOKEN")
 	if accessToken == "" {
