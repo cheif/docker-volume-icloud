@@ -111,18 +111,12 @@ func (inode *iCloudInode) Open(ctx context.Context, flags uint32) (fh fs.FileHan
 }
 
 func (inode *iCloudInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	return inode, 0
+	end := int(off) + len(dest)
+	if end > len(inode.data) {
+		end = len(inode.data)
+	}
+	return fuse.ReadResultData(inode.data[off:end]), 0
 }
-
-func (inode *iCloudInode) Size() int {
-	return int(len(inode.data))
-}
-
-func (inode *iCloudInode) Bytes(buf []byte) ([]byte, fuse.Status) {
-	return inode.data, 0
-}
-
-func (inode *iCloudInode) Done() {}
 
 func (inode *iCloudInode) Write(ctx context.Context, f fs.FileHandle, data []byte, off int64) (written uint32, errno syscall.Errno) {
 	// FIXME: Incorrect offset here it seems, if trying to echo to the end of file we still get 0
