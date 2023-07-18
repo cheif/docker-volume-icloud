@@ -134,7 +134,10 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 		return nil, err
 	}
 	response := new([]GetNodeDataResponse)
-	json.Unmarshal(body, &response)
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return nil, err
+	}
 	if len(*response) == 0 {
 		return nil, fmt.Errorf("Error when parsing getNodeData response: %v", string(body))
 	}
@@ -219,7 +222,10 @@ func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
 		return nil, err
 	}
 	response := new(DownloadInfo)
-	json.Unmarshal(body, &response)
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return nil, err
+	}
 
 	req, err = http.NewRequest("GET", response.DataToken.Url, nil)
 	if err != nil {
