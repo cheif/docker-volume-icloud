@@ -38,7 +38,7 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 			return inode.generateInode(ctx, &node), 0
 		}
 	}
-	return nil, 0
+	return nil, syscall.ENOENT
 }
 
 func (inode *iCloudInode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
