@@ -16,11 +16,12 @@ import (
 type CookieJar struct {
 	sync.Mutex
 
-	cookies []*http.Cookie
+	cookies map[string]*http.Cookie
 }
 
 func NewCookieJar() *CookieJar {
 	jar := new(CookieJar)
+	jar.cookies = make(map[string]*http.Cookie)
 	return jar
 }
 
@@ -28,17 +29,21 @@ func (j *CookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	j.Lock()
 	defer j.Unlock()
 	for _, cookie := range cookies {
-		j.cookies = append(j.cookies, cookie)
+		j.cookies[cookie.Name] = cookie
 	}
 }
 
 func (j *CookieJar) Cookies(u *url.URL) []*http.Cookie {
-	return j.cookies
+	cookies := make([]*http.Cookie, 0)
+	for _, cookie := range j.cookies {
+		cookies = append(cookies, cookie)
+	}
+	return cookies
 }
 
 func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 	jar := NewCookieJar()
-	jar.cookies = []*http.Cookie{
+	jar.SetCookies(nil, []*http.Cookie{
 		&http.Cookie{
 			Name:  "X-APPLE-WEBAUTH-TOKEN",
 			Value: accessToken,
@@ -47,7 +52,7 @@ func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 			Name:  "X-APPLE-WEBAUTH-USER",
 			Value: webauthUser,
 		},
-	}
+	})
 	return jar
 }
 
