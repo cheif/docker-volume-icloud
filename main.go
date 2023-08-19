@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -143,7 +144,11 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 			drive: *d.drive,
 		}
 
-		opts := &fs.Options{}
+		timeout := time.Second * 10
+		opts := &fs.Options{
+			EntryTimeout: &timeout,
+			AttrTimeout:  &timeout,
+		}
 		server, err := fs.Mount(v.Mountpoint, &inode, opts)
 		if err != nil {
 			return nil, logError("Mounting failed: %v", err)
