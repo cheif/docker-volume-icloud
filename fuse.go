@@ -34,6 +34,8 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 		if node.Filename() == name {
 			out.Mode = 0644
 			out.Size = node.Size
+			out.Ctime = uint64(node.DateCreated.Unix())
+			out.Mtime = uint64(node.DateChanged.Unix())
 			return inode.generateInode(ctx, &node), 0
 		}
 	}

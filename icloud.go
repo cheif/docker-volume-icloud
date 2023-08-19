@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 type CookieJar struct {
@@ -145,14 +146,16 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	var children []iCloudNode
 	for _, item := range node.Items {
 		children = append(children, iCloudNode{
-			drivewsid: item.Drivewsid,
-			docwsid:   item.Docwsid,
-			zone:      item.Zone,
-			shallow:   item.Type == "FOLDER",
-			Name:      item.Name,
-			Size:      item.Size,
-			Extension: item.Extension,
-			Etag:      item.Etag,
+			drivewsid:   item.Drivewsid,
+			docwsid:     item.Docwsid,
+			zone:        item.Zone,
+			shallow:     item.Type == "FOLDER",
+			Name:        item.Name,
+			Size:        item.Size,
+			Extension:   item.Extension,
+			Etag:        item.Etag,
+			DateCreated: item.DateCreated,
+			DateChanged: item.DateChanged,
 		})
 	}
 	return &iCloudNode{
@@ -400,6 +403,9 @@ type NodeDataItem struct {
 	Type      string  `json:"type"`
 	Extension *string `json:"extension"`
 	Etag      string  `json:"etag"`
+
+	DateCreated time.Time `json:"dateCreated"`
+	DateChanged time.Time `json:"dateChanged"`
 }
 
 type DataToken struct {
@@ -411,15 +417,18 @@ type DownloadInfo struct {
 }
 
 type iCloudNode struct {
-	drivewsid string
-	zone      string
-	docwsid   string
-	shallow   bool
-	Name      string
-	Size      uint64
-	Extension *string
-	Etag      string
-	children  *[]iCloudNode
+	drivewsid   string
+	zone        string
+	docwsid     string
+	shallow     bool
+	Name        string
+	Size        uint64
+	Extension   *string
+	Etag        string
+	DateCreated time.Time
+	DateChanged time.Time
+
+	children *[]iCloudNode
 }
 
 func (node *iCloudNode) Hash() uint64 {
