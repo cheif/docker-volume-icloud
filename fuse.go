@@ -18,13 +18,10 @@ type iCloudInode struct {
 	dataDirty bool
 }
 
-func (inode *iCloudInode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Size = inode.node.Size
-	out.Attr.Mode = 0644
-	return 0
-}
+// Node types must be InodeEmbedders
+var _ = (fs.InodeEmbedder)((*iCloudInode)(nil))
 
-var _ = (fs.NodeReaddirer)((*iCloudInode)(nil))
+var _ = (fs.NodeLookuper)((*iCloudInode)(nil))
 
 func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	children, err := inode.drive.GetChildren(inode.node)
@@ -35,11 +32,36 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 	}
 	for _, node := range *children {
 		if node.Filename() == name {
+			out.Mode = 0644
+			out.Size = node.Size
 			return inode.generateInode(ctx, &node), 0
 		}
 	}
 	return nil, syscall.ENOENT
 }
+
+func (inode *iCloudInode) generateInode(ctx context.Context, node *iCloudNode) *fs.Inode {
+	return inode.NewPersistentInode(
+		ctx,
+		&iCloudInode{
+			node:      node,
+			drive:     inode.drive,
+			dataDirty: true,
+		},
+		node.stableAttr(),
+	)
+}
+
+func (node *iCloudNode) stableAttr() fs.StableAttr {
+	attr := fs.StableAttr{Ino: node.Hash()}
+	if node.Extension == nil {
+		// TODO: This is a directory, probably a better way to test this?
+		attr.Mode = fuse.S_IFDIR
+	}
+	return attr
+}
+
+var _ = (fs.NodeReaddirer)((*iCloudInode)(nil))
 
 func (inode *iCloudInode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	children, err := inode.drive.GetChildren(inode.node)
@@ -77,25 +99,6 @@ func (stream *iCloudDirStream) Next() (fuse.DirEntry, syscall.Errno) {
 }
 
 func (stream *iCloudDirStream) Close() {}
-
-func (node *iCloudNode) stableAttr() fs.StableAttr {
-	attr := fs.StableAttr{Ino: node.Hash()}
-	if node.Extension == nil {
-		// TODO: This is a directory, probably a better way to test this?
-		attr.Mode = fuse.S_IFDIR
-	}
-	return attr
-}
-
-func (inode *iCloudInode) generateInode(ctx context.Context, node *iCloudNode) *fs.Inode {
-	return inode.NewPersistentInode(
-		ctx, &iCloudInode{
-			node:  node,
-			drive: inode.drive,
-		},
-		node.stableAttr(),
-	)
-}
 
 // File Open/Read handling
 func (inode *iCloudInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
