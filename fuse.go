@@ -12,10 +12,8 @@ import (
 type iCloudInode struct {
 	fs.Inode
 
-	node      *iCloudNode
-	drive     iCloudDrive
-	data      []byte
-	dataDirty bool
+	node  *iCloudNode
+	drive iCloudDrive
 }
 
 // Node types must be InodeEmbedders
@@ -46,9 +44,8 @@ func (inode *iCloudInode) generateInode(ctx context.Context, node *iCloudNode) *
 	return inode.NewPersistentInode(
 		ctx,
 		&iCloudInode{
-			node:      node,
-			drive:     inode.drive,
-			dataDirty: true,
+			node:  node,
+			drive: inode.drive,
 		},
 		node.stableAttr(),
 	)
@@ -104,44 +101,74 @@ func (stream *iCloudDirStream) Close() {}
 
 // File Open/Read handling
 func (inode *iCloudInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	bytes, err := inode.drive.GetData(inode.node)
-	if err != nil {
-		log.Println("Error:", err)
-		// TODO: Probably wrong Errno here :/
-		return nil, 0, 1
+	file := iCloudFile{
+		inode:       inode,
+		dataFetched: false,
 	}
-	inode.data = bytes
-	inode.dataDirty = false
-	return nil, fuse.FOPEN_KEEP_CACHE, 0
+	return &file, fuse.FOPEN_KEEP_CACHE, 0
 }
 
-func (inode *iCloudInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+type iCloudFile struct {
+	inode *iCloudInode
+
+	dataFetched bool
+	data        []byte
+	dirty       bool
+}
+
+var _ = (fs.FileReader)((*iCloudFile)(nil))
+var _ = (fs.FileWriter)((*iCloudFile)(nil))
+var _ = (fs.FileFlusher)((*iCloudFile)(nil))
+
+func (file *iCloudFile) ensureDataFetched() syscall.Errno {
+	if !file.dataFetched {
+		bytes, err := file.inode.drive.GetData(file.inode.node)
+		if err != nil {
+			log.Println("Error:", err)
+			// TODO: Probably wrong Errno here :/
+			return 1
+		}
+		file.data = bytes
+		file.dataFetched = true
+	}
+	return 0
+}
+
+func (file *iCloudFile) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	err := file.ensureDataFetched()
+	if err != 0 {
+		return nil, err
+	}
 	end := int(off) + len(dest)
-	if end > len(inode.data) {
-		end = len(inode.data)
+	if end > len(file.data) {
+		end = len(file.data)
 	}
-	return fuse.ReadResultData(inode.data[off:end]), 0
+	return fuse.ReadResultData(file.data[off:end]), 0
 }
 
-func (inode *iCloudInode) Write(ctx context.Context, f fs.FileHandle, data []byte, off int64) (written uint32, errno syscall.Errno) {
+func (file *iCloudFile) Write(ctx context.Context, data []byte, off int64) (written uint32, errno syscall.Errno) {
+	err := file.ensureDataFetched()
+	if err != 0 {
+		return 0, err
+	}
 	// FIXME: Incorrect offset here it seems, if trying to echo to the end of file we still get 0
 	end := int64(len(data)) + off
-	if int64(len(inode.data)) < end {
+	if int64(len(file.data)) < end {
 		n := make([]byte, end)
-		copy(n, inode.data)
-		inode.data = n
+		copy(n, file.data)
+		file.data = n
 	}
-	copy(inode.data[off:end], data)
-	inode.dataDirty = true
+	copy(file.data[off:end], data)
+	file.dirty = true
 	return uint32(len(data)), 0
 }
 
-func (inode *iCloudInode) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
-	if !inode.dataDirty {
+func (file *iCloudFile) Flush(ctx context.Context) syscall.Errno {
+	if !file.dirty {
 		// NOOP
 		return 0
 	}
-	err := inode.drive.WriteData(inode.node, inode.data)
+	err := file.inode.drive.WriteData(file.inode.node, file.data)
 	if err != nil {
 		log.Printf("Error when flushing: %v", err)
 		// TODO: Probably wrong Errno here :/
