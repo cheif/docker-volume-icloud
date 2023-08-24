@@ -239,6 +239,10 @@ func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO: We probably need more strict testing here, but it seems like iCloud responds with a 400 when the file doesn't exist, so we just check for that now
+	if resp.StatusCode == http.StatusBadRequest {
+		return []byte{}, nil
+	}
 	return ioutil.ReadAll(resp.Body)
 }
 
