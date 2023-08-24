@@ -106,8 +106,7 @@ func (drive *iCloudDrive) GetNodeData(node *iCloudNode) (*iCloudNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	node.children = data.children
-	node.shallow = false
+	node.setChildren(data.children)
 	return node, nil
 }
 
@@ -143,6 +142,17 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 		return nil, fmt.Errorf("Error when parsing getNodeData response: %v", string(body))
 	}
 	node := (*response)[0]
+
+	parent := &iCloudNode{
+		drivewsid: node.Drivewsid,
+		docwsid:   node.Docwsid,
+		zone:      node.Zone,
+		shallow:   false,
+		Name:      node.Name,
+		Size:      node.Size,
+		Extension: node.Extension,
+		Etag:      node.Etag,
+	}
 	var children []iCloudNode
 	for _, item := range node.Items {
 		children = append(children, iCloudNode{
@@ -158,17 +168,19 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 			DateChanged: item.DateChanged,
 		})
 	}
-	return &iCloudNode{
-		drivewsid: node.Drivewsid,
-		docwsid:   node.Docwsid,
-		zone:      node.Zone,
-		shallow:   false,
-		Name:      node.Name,
-		Size:      node.Size,
-		Extension: node.Extension,
-		Etag:      node.Etag,
-		children:  &children,
-	}, nil
+	parent.setChildren(&children)
+	return parent, nil
+}
+
+func (node *iCloudNode) setChildren(children *[]iCloudNode) {
+	if children == nil {
+		return
+	}
+	for idx, _ := range *children {
+		(*children)[idx].parent = node
+	}
+	node.children = children
+	node.shallow = false
 }
 
 func (drive *iCloudDrive) GetChildren(node *iCloudNode) (*[]iCloudNode, error) {
@@ -267,7 +279,13 @@ func (drive *iCloudDrive) WriteData(node *iCloudNode, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return drive.updateDocumentLink(node, response.SingleFile)
+	err = drive.updateDocumentLink(node, response.SingleFile)
+	if err != nil {
+		return err
+	}
+	// Make sure that the parent re-fetches data for it's children after this write
+	node.parent.shallow = true
+	return nil
 }
 
 func (drive *iCloudDrive) uploadFileData(node *iCloudNode) (*UploadURLResponse, error) {
@@ -432,6 +450,7 @@ type iCloudNode struct {
 	DateCreated time.Time
 	DateChanged time.Time
 
+	parent   *iCloudNode
 	children *[]iCloudNode
 }
 
