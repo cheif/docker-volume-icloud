@@ -15,5 +15,13 @@ install: cheif/icloud
 	docker plugin set cheif/icloud ACCESS_TOKEN=$(ACCESS_TOKEN) WEBAUTH_USER=$(WEBAUTH_USER)
 	docker plugin enable cheif/icloud
 
+# Fire up a test-environment
+testenv:
+	docker build --target test-environment -t test-environment .
+	docker run --device /dev/fuse --privileged -it --rm -v `pwd`:/go/src/github.com/cheif/docker-volume-icloud \
+		-e ACCESS_TOKEN=$(ACCESS_TOKEN) \
+		-e WEBAUTH_USER=$(WEBAUTH_USER) \
+		test-environment sh
+
 clean:
 	rm -rf plugin/rootfs
