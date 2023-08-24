@@ -29,3 +29,6 @@ When all of this is done, you should be able to use this plugin to run whatever 
 
 ## Caveats
 Since this relies on manually getting cookies from icloud.com, I assume it will stop working after some time, and then you'd have to fetch new cookies and update them. While writing this I haven't had any problems yet, but I've only run it for ~1 week, so it'll probably break going forward.
+
+# TODO
+- [] It seems like files aren't properly updated when writing to them, this probably stems from the fact that iCloud will just create a new file, and update the pointer of the node to the new one, and we're not picking this up properly. We probably need to invalidate the reference to this node I guess?
