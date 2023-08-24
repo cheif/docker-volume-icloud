@@ -153,7 +153,7 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 		if err != nil {
 			return nil, logError("Mounting failed: %v", err)
 		}
-		log.Println("Serving: %v", server)
+		log.Printf("Serving: %v\n", server)
 		v.server = server
 	}
 
