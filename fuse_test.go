@@ -5,10 +5,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -31,6 +33,68 @@ func TestWrite(t *testing.T) {
 	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
 
 	err = appendToFile("/mnt/testfile.txt", toAppend)
+	if err != nil {
+		t.Error(err)
+	}
+
+	after, err := readString("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := before + toAppend
+	diff := diff(after, expected)
+	if len(diff) > 0 {
+		t.Errorf(diff)
+	}
+}
+
+func TestReadTwice(t *testing.T) {
+	inode, err := createInode()
+	if err != nil {
+		t.Error(err)
+	}
+	server, err := fs.Mount("/mnt", inode, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer server.Unmount()
+
+	before, err := readString("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
+
+	after, err := readString("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
+
+	diff := diff(after, before)
+	if len(diff) > 0 {
+		t.Errorf(diff)
+	}
+}
+
+func TestEchoAndRead(t *testing.T) {
+	inode, err := createInode()
+	if err != nil {
+		t.Error(err)
+	}
+	server, err := fs.Mount("/mnt", inode, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer server.Unmount()
+
+	before, err := readString("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
+
+	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
+
+	err = exec.Command("sh", "-c", fmt.Sprintf(`echo -n "%s" >> /mnt/testfile.txt`, toAppend)).Run()
 	if err != nil {
 		t.Error(err)
 	}
@@ -101,4 +165,15 @@ func createInode() (*iCloudInode, error) {
 		drive: drive,
 	}
 	return &inode, nil
+}
+
+func debugOpts() *fs.Options {
+	timeout := time.Second
+	return &fs.Options{
+		MountOptions: fuse.MountOptions{
+			Debug: true,
+		},
+		EntryTimeout: &timeout,
+		AttrTimeout:  &timeout,
+	}
 }

@@ -119,6 +119,15 @@ type iCloudFile struct {
 var _ = (fs.FileReader)((*iCloudFile)(nil))
 var _ = (fs.FileWriter)((*iCloudFile)(nil))
 var _ = (fs.FileFlusher)((*iCloudFile)(nil))
+var _ = (fs.FileGetattrer)((*iCloudFile)(nil))
+
+func (file *iCloudFile) Getattr(ctx context.Context, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = 0644
+	out.Size = file.inode.node.Size
+	out.Ctime = uint64(file.inode.node.DateCreated.Unix())
+	out.Mtime = uint64(file.inode.node.DateChanged.Unix())
+	return 0
+}
 
 func (file *iCloudFile) ensureDataFetched() syscall.Errno {
 	if !file.dataFetched {
