@@ -102,8 +102,7 @@ func (stream *iCloudDirStream) Close() {}
 // File Open/Read handling
 func (inode *iCloudInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	file := iCloudFile{
-		inode:       inode,
-		dataFetched: false,
+		inode: inode,
 	}
 	return &file, fuse.FOPEN_KEEP_CACHE, 0
 }
@@ -111,9 +110,8 @@ func (inode *iCloudInode) Open(ctx context.Context, flags uint32) (fh fs.FileHan
 type iCloudFile struct {
 	inode *iCloudInode
 
-	dataFetched bool
-	data        []byte
-	dirty       bool
+	data  *[]byte
+	dirty bool
 }
 
 var _ = (fs.FileReader)((*iCloudFile)(nil))
@@ -130,15 +128,14 @@ func (file *iCloudFile) Getattr(ctx context.Context, out *fuse.AttrOut) syscall.
 }
 
 func (file *iCloudFile) ensureDataFetched() syscall.Errno {
-	if !file.dataFetched {
+	if file.data == nil {
 		bytes, err := file.inode.drive.GetData(file.inode.node)
 		if err != nil {
 			log.Println("Error:", err)
 			// TODO: Probably wrong Errno here :/
 			return 1
 		}
-		file.data = bytes
-		file.dataFetched = true
+		file.data = &bytes
 	}
 	return 0
 }
@@ -148,11 +145,13 @@ func (file *iCloudFile) Read(ctx context.Context, dest []byte, off int64) (fuse.
 	if err != 0 {
 		return nil, err
 	}
+	bytes := *file.data
 	end := int(off) + len(dest)
-	if end > len(file.data) {
-		end = len(file.data)
+	if end > len(bytes) {
+		end = len(bytes)
 	}
-	return fuse.ReadResultData(file.data[off:end]), 0
+	copy(dest, bytes[off:end])
+	return fuse.ReadResultData(dest), 0
 }
 
 func (file *iCloudFile) Write(ctx context.Context, data []byte, off int64) (written uint32, errno syscall.Errno) {
@@ -162,12 +161,12 @@ func (file *iCloudFile) Write(ctx context.Context, data []byte, off int64) (writ
 	}
 	// FIXME: Incorrect offset here it seems, if trying to echo to the end of file we still get 0
 	end := int64(len(data)) + off
-	if int64(len(file.data)) < end {
+	if int64(len(*file.data)) < end {
 		n := make([]byte, end)
-		copy(n, file.data)
-		file.data = n
+		copy(n, *file.data)
+		*file.data = n
 	}
-	copy(file.data[off:end], data)
+	copy((*file.data)[off:end], data)
 	file.dirty = true
 	return uint32(len(data)), 0
 }
@@ -177,7 +176,7 @@ func (file *iCloudFile) Flush(ctx context.Context) syscall.Errno {
 		// NOOP
 		return 0
 	}
-	err := file.inode.drive.WriteData(file.inode.node, file.data)
+	err := file.inode.drive.WriteData(file.inode.node, *file.data)
 	if err != nil {
 		log.Printf("Error when flushing: %v", err)
 		// TODO: Probably wrong Errno here :/
