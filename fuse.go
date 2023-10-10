@@ -20,6 +20,7 @@ type iCloudInode struct {
 var _ = (fs.InodeEmbedder)((*iCloudInode)(nil))
 
 var _ = (fs.NodeLookuper)((*iCloudInode)(nil))
+var _ = (fs.NodeSetattrer)((*iCloudInode)(nil))
 
 func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	children, err := inode.drive.GetChildren(inode.node)
@@ -38,6 +39,11 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 		}
 	}
 	return nil, syscall.ENOENT
+}
+
+func (inode *iCloudInode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	log.Println("No-Op SetAttr", f, in)
+	return 0
 }
 
 func (inode *iCloudInode) generateInode(ctx context.Context, node *iCloudNode) *fs.Inode {
