@@ -12,7 +12,7 @@ publish: cheif/icloud
 	docker plugin push cheif/icloud
 
 install: cheif/icloud
-	docker plugin set cheif/icloud ACCESS_TOKEN=$(ACCESS_TOKEN) WEBAUTH_USER=$(WEBAUTH_USER)
+	docker plugin set cheif/icloud ACCESS_TOKEN=$(ACCESS_TOKEN) WEBAUTH_USER=$(WEBAUTH_USER) DEBUG=$(DEBUG)
 	docker plugin enable cheif/icloud
 
 # Fire up a test-environment

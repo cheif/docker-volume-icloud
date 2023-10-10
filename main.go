@@ -148,6 +148,9 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 		opts := &fs.Options{
 			EntryTimeout: &timeout,
 			AttrTimeout:  &timeout,
+			MountOptions: fuse.MountOptions{
+				Debug: os.Getenv("DEBUG") != "",
+			},
 		}
 		server, err := fs.Mount(v.Mountpoint, &inode, opts)
 		if err != nil {

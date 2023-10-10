@@ -16,6 +16,13 @@
           "settable": [
               "value"
           ]
+      },
+      {
+          "name": "DEBUG",
+          "description": "Debug output",
+          "settable": [
+              "value"
+          ]
       }
   ],
   "network": {
