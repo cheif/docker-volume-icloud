@@ -4,8 +4,7 @@ plugin/rootfs: *.go
 	docker export "`docker create --platform linux/amd64 docker-volume-icloud true`" | tar -x -C plugin/rootfs
 
 cheif/icloud: plugin/rootfs
-	- docker plugin disable cheif/icloud
-	- docker plugin rm cheif/icloud
+	- docker plugin rm -f cheif/icloud
 	docker plugin create cheif/icloud plugin
 
 publish: cheif/icloud
