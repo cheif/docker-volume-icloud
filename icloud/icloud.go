@@ -58,7 +58,9 @@ func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 }
 
 type Drive struct {
-	client http.Client
+	client             http.Client
+	continuationMarker *string
+	root               *Node
 }
 
 func NewDrive(client http.Client) Drive {
@@ -101,13 +103,27 @@ type DsInfo struct {
 }
 
 func (drive *Drive) GetRootNode() (*Node, error) {
-	return drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
+	if drive.root != nil {
+		changes, _ := drive.getNewChanges()
+		if !changes {
+			return drive.root, nil
+		}
+	}
+	root, err := drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
+	if err != nil {
+		return nil, err
+	}
+	drive.root = root
+	return root, nil
 }
 
 func (drive *Drive) GetNodeData(node *Node) (*Node, error) {
 	// This is a proxy for if this node already has all data, or if we need to fetch it to get children etc.
 	if !node.shallow {
-		return node, nil
+		changes, _ := drive.getNewChanges()
+		if !changes {
+			return node, nil
+		}
 	}
 	data, err := drive.getNodeData(node.drivewsid)
 	if err != nil {
@@ -191,6 +207,77 @@ func (node *Node) setChildren(children *[]Node) {
 	node.shallow = false
 }
 
+// This tries to make sure that we dont keep stale references cached.
+// It does so by enumerating recent docs, which gives us a marker that we can then poll until iCloud tells us things have changed.
+// When this happens we get a new marker, and returns true, so that other parts of the package can re-fetch data.
+func (drive *Drive) getNewChanges() (bool, error) {
+	var hasChanges bool
+	var err error
+	if drive.continuationMarker != nil {
+		hasChanges, err = drive.checkHasChanges(*drive.continuationMarker)
+		if err != nil {
+			return false, err
+		}
+		if hasChanges {
+			drive.continuationMarker = nil
+		}
+	}
+
+	if drive.continuationMarker == nil {
+		enumerate, err := drive.enumerateRecentDocs()
+		if err != nil {
+			return false, err
+		}
+		drive.continuationMarker = &enumerate.ContinuationMarker
+	}
+	return hasChanges, nil
+}
+
+func (drive *Drive) checkHasChanges(continuationMarker string) (bool, error) {
+	url := fmt.Sprintf("https://p63-docws.icloud.com/ws/_all_/list/changes/recentDocs?limit=50&nextPage=%s", url.QueryEscape(continuationMarker))
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	if resp.StatusCode == 205 {
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
+
+func (drive *Drive) enumerateRecentDocs() (*EnumerateResponse, error) {
+	req, err := http.NewRequest("GET", "https://p63-docws.icloud.com/ws/_all_/list/enumerate/recentDocs?limit=50", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	response := new(EnumerateResponse)
+	err = json.Unmarshal(body, &response)
+	return response, err
+}
+
+type EnumerateResponse struct {
+	ContinuationMarker string `json:"continuationMarker"`
+}
+
 func (drive *Drive) GetChildren(node *Node) (*[]Node, error) {
 	node, err := drive.GetNodeData(node)
 	if err != nil {
@@ -209,19 +296,22 @@ func (drive *Drive) GetNode(path string) (*Node, error) {
 			continue
 		}
 		var child *Node
-		for _, candidate := range *node.children {
+		for i, candidate := range *node.children {
 			if candidate.Filename() == component {
-				child = &candidate
+				child, err = drive.GetNodeData(&candidate)
+				if err != nil {
+					return nil, err
+				}
+				if child != nil {
+					(*node.children)[i] = *child
+				}
 				break
 			}
 		}
 		if child == nil {
 			return nil, fmt.Errorf("Could not find component: %s", component)
 		}
-		node, err = drive.GetNodeData(child)
-		if err != nil {
-			return nil, err
-		}
+		node = child
 	}
 	return node, nil
 }
@@ -291,8 +381,6 @@ func (drive *Drive) WriteData(node *Node, data []byte) error {
 	if err != nil {
 		return err
 	}
-	// Make sure that the parent re-fetches data for it's children after this write
-	node.parent.shallow = true
 	return nil
 }
 
