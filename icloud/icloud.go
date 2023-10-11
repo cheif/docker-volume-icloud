@@ -1,4 +1,4 @@
-package main
+package icloud
 
 import (
 	"bytes"
@@ -57,11 +57,17 @@ func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 	return jar
 }
 
-type iCloudDrive struct {
+type Drive struct {
 	client http.Client
 }
 
-func (drive *iCloudDrive) ValidateToken() error {
+func NewDrive(client http.Client) Drive {
+	return Drive{
+		client: client,
+	}
+}
+
+func (drive *Drive) ValidateToken() error {
 	req, err := http.NewRequest("POST", "https://setup.icloud.com/setup/ws/1/validate", nil)
 	if err != nil {
 		return err
@@ -81,6 +87,7 @@ func (drive *iCloudDrive) ValidateToken() error {
 	if response == nil {
 		return fmt.Errorf("Unable to validate token")
 	}
+	// FIXME: This seems ot return without error even if PrimaryEmail == "", seen happening with an old token
 	log.Println("Validated token for:", response.DsInfo.PrimaryEmail)
 	return nil
 }
@@ -93,11 +100,11 @@ type DsInfo struct {
 	PrimaryEmail string `json:"primaryEmail"`
 }
 
-func (drive *iCloudDrive) GetRootNode() (*iCloudNode, error) {
+func (drive *Drive) GetRootNode() (*Node, error) {
 	return drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
 }
 
-func (drive *iCloudDrive) GetNodeData(node *iCloudNode) (*iCloudNode, error) {
+func (drive *Drive) GetNodeData(node *Node) (*Node, error) {
 	// This is a proxy for if this node already has all data, or if we need to fetch it to get children etc.
 	if !node.shallow {
 		return node, nil
@@ -110,7 +117,7 @@ func (drive *iCloudDrive) GetNodeData(node *iCloudNode) (*iCloudNode, error) {
 	return node, nil
 }
 
-func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
+func (drive *Drive) getNodeData(drivewsid string) (*Node, error) {
 	payload := []GetNodeDataRequest{
 		GetNodeDataRequest{
 			Drivewsid: drivewsid,
@@ -143,19 +150,20 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	}
 	node := (*response)[0]
 
-	parent := &iCloudNode{
-		drivewsid: node.Drivewsid,
-		docwsid:   node.Docwsid,
-		zone:      node.Zone,
-		shallow:   false,
-		Name:      node.Name,
-		Size:      node.Size,
-		Extension: node.Extension,
-		Etag:      node.Etag,
+	parent := &Node{
+		drivewsid:   node.Drivewsid,
+		docwsid:     node.Docwsid,
+		zone:        node.Zone,
+		shallow:     false,
+		Name:        node.Name,
+		Size:        node.Size,
+		Extension:   node.Extension,
+		Etag:        node.Etag,
+		DateCreated: node.DateCreated,
 	}
-	var children []iCloudNode
+	var children []Node
 	for _, item := range node.Items {
-		children = append(children, iCloudNode{
+		children = append(children, Node{
 			drivewsid:   item.Drivewsid,
 			docwsid:     item.Docwsid,
 			zone:        item.Zone,
@@ -172,7 +180,7 @@ func (drive *iCloudDrive) getNodeData(drivewsid string) (*iCloudNode, error) {
 	return parent, nil
 }
 
-func (node *iCloudNode) setChildren(children *[]iCloudNode) {
+func (node *Node) setChildren(children *[]Node) {
 	if children == nil {
 		return
 	}
@@ -183,7 +191,7 @@ func (node *iCloudNode) setChildren(children *[]iCloudNode) {
 	node.shallow = false
 }
 
-func (drive *iCloudDrive) GetChildren(node *iCloudNode) (*[]iCloudNode, error) {
+func (drive *Drive) GetChildren(node *Node) (*[]Node, error) {
 	node, err := drive.GetNodeData(node)
 	if err != nil {
 		return nil, err
@@ -191,7 +199,7 @@ func (drive *iCloudDrive) GetChildren(node *iCloudNode) (*[]iCloudNode, error) {
 	return node.children, nil
 }
 
-func (drive *iCloudDrive) GetNode(path string) (*iCloudNode, error) {
+func (drive *Drive) GetNode(path string) (*Node, error) {
 	node, err := drive.GetRootNode()
 	if err != nil {
 		return nil, err
@@ -200,7 +208,7 @@ func (drive *iCloudDrive) GetNode(path string) (*iCloudNode, error) {
 		if component == "" {
 			continue
 		}
-		var child *iCloudNode
+		var child *Node
 		for _, candidate := range *node.children {
 			if candidate.Filename() == component {
 				child = &candidate
@@ -218,7 +226,7 @@ func (drive *iCloudDrive) GetNode(path string) (*iCloudNode, error) {
 	return node, nil
 }
 
-func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
+func (drive *Drive) GetData(node *Node) ([]byte, error) {
 	req, err := http.NewRequest(
 		"GET",
 		fmt.Sprintf("https://p63-docws.icloud.com/ws/%s/download/by_id?document_id=%s", node.zone, node.docwsid),
@@ -258,7 +266,7 @@ func (drive *iCloudDrive) GetData(node *iCloudNode) ([]byte, error) {
 	return ioutil.ReadAll(resp.Body)
 }
 
-func (drive *iCloudDrive) WriteData(node *iCloudNode, data []byte) error {
+func (drive *Drive) WriteData(node *Node, data []byte) error {
 	uploadData, err := drive.uploadFileData(node)
 	if err != nil {
 		return err
@@ -288,7 +296,7 @@ func (drive *iCloudDrive) WriteData(node *iCloudNode, data []byte) error {
 	return nil
 }
 
-func (drive *iCloudDrive) uploadFileData(node *iCloudNode) (*UploadURLResponse, error) {
+func (drive *Drive) uploadFileData(node *Node) (*UploadURLResponse, error) {
 	payload := UploadURLRequest{
 		Filename:    node.Filename(),
 		Type:        "FILE",
@@ -323,7 +331,7 @@ func (drive *iCloudDrive) uploadFileData(node *iCloudNode) (*UploadURLResponse, 
 	return &(*response)[0], nil
 }
 
-func (drive *iCloudDrive) updateDocumentLink(node *iCloudNode, fileData UploadFileData) error {
+func (drive *Drive) updateDocumentLink(node *Node, fileData UploadFileData) error {
 	payload := UpdateDocumentLinkRequest{
 		DocumentId: node.docwsid,
 		Command:    "modify_file",
@@ -405,15 +413,17 @@ type GetNodeDataRequest struct {
 }
 
 type GetNodeDataResponse struct {
-	Drivewsid string         `json:"drivewsid"`
-	Docwsid   string         `json:"docwsid"`
-	Zone      string         `json:"zone"`
-	Name      string         `json:"name"`
-	Size      uint64         `json:"size"`
-	Type      string         `json:"type"`
-	Extension *string        `json:"extension"`
-	Etag      string         `json:"etag"`
-	Items     []NodeDataItem `json:"items"`
+	Drivewsid   string    `json:"drivewsid"`
+	Docwsid     string    `json:"docwsid"`
+	Zone        string    `json:"zone"`
+	Name        string    `json:"name"`
+	Size        uint64    `json:"size"`
+	Type        string    `json:"type"`
+	Extension   *string   `json:"extension"`
+	Etag        string    `json:"etag"`
+	DateCreated time.Time `json:"dateCreated"`
+
+	Items []NodeDataItem `json:"items"`
 }
 
 type NodeDataItem struct {
@@ -438,7 +448,7 @@ type DownloadInfo struct {
 	DataToken DataToken `json:"data_token"`
 }
 
-type iCloudNode struct {
+type Node struct {
 	drivewsid   string
 	zone        string
 	docwsid     string
@@ -450,17 +460,17 @@ type iCloudNode struct {
 	DateCreated time.Time
 	DateChanged time.Time
 
-	parent   *iCloudNode
-	children *[]iCloudNode
+	parent   *Node
+	children *[]Node
 }
 
-func (node *iCloudNode) Hash() uint64 {
+func (node *Node) Hash() uint64 {
 	h := fnv.New64a()
 	h.Write([]byte(node.drivewsid))
 	return h.Sum64()
 }
 
-func (node *iCloudNode) Filename() string {
+func (node *Node) Filename() string {
 	if node.Extension != nil {
 		return fmt.Sprintf("%s.%s", node.Name, *node.Extension)
 	} else {

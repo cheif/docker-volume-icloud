@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cheif/docker-volume-icloud/icloud"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/pmezard/go-difflib/difflib"
@@ -151,10 +152,8 @@ func createInode() (*iCloudInode, error) {
 		return nil, fmt.Errorf("WEBAUTH_USER required!")
 	}
 	client := http.Client{}
-	client.Jar = AuthenticatedJar(accessToken, webauthUser)
-	drive := iCloudDrive{
-		client: client,
-	}
+	client.Jar = icloud.AuthenticatedJar(accessToken, webauthUser)
+	drive := icloud.NewDrive(client)
 	drive.ValidateToken()
 	node, err := drive.GetNode("/test/")
 	if err != nil {

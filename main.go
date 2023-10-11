@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cheif/docker-volume-icloud/icloud"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -28,17 +29,15 @@ type iCloudDriver struct {
 	sync.RWMutex
 
 	root    string
-	drive   *iCloudDrive
+	drive   *icloud.Drive
 	volumes map[string]*iCloudVolume
 }
 
 func newIcloudDriver(accessToken string, webauthUser string) (*iCloudDriver, error) {
 
 	client := http.Client{}
-	client.Jar = AuthenticatedJar(accessToken, webauthUser)
-	drive := iCloudDrive{
-		client: client,
-	}
+	client.Jar = icloud.AuthenticatedJar(accessToken, webauthUser)
+	drive := icloud.NewDrive(client)
 	err := drive.ValidateToken()
 	if err != nil {
 		return nil, err

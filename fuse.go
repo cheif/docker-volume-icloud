@@ -5,6 +5,7 @@ import (
 	"log"
 	"syscall"
 
+	"github.com/cheif/docker-volume-icloud/icloud"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
@@ -12,8 +13,8 @@ import (
 type iCloudInode struct {
 	fs.Inode
 
-	node  *iCloudNode
-	drive iCloudDrive
+	node  *icloud.Node
+	drive icloud.Drive
 }
 
 // Node types must be InodeEmbedders
@@ -46,18 +47,18 @@ func (inode *iCloudInode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse
 	return 0
 }
 
-func (inode *iCloudInode) generateInode(ctx context.Context, node *iCloudNode) *fs.Inode {
+func (inode *iCloudInode) generateInode(ctx context.Context, node *icloud.Node) *fs.Inode {
 	return inode.NewPersistentInode(
 		ctx,
 		&iCloudInode{
 			node:  node,
 			drive: inode.drive,
 		},
-		node.stableAttr(),
+		stableAttr(node),
 	)
 }
 
-func (node *iCloudNode) stableAttr() fs.StableAttr {
+func stableAttr(node *icloud.Node) fs.StableAttr {
 	attr := fs.StableAttr{Ino: node.Hash()}
 	if node.Extension == nil {
 		// TODO: This is a directory, probably a better way to test this?
@@ -80,7 +81,7 @@ func (inode *iCloudInode) Readdir(ctx context.Context) (fs.DirStream, syscall.Er
 
 // DirStream implementation
 type iCloudDirStream struct {
-	children []iCloudNode
+	children []icloud.Node
 }
 
 func (stream *iCloudDirStream) HasNext() bool {
