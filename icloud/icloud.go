@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -45,11 +45,11 @@ func (j *CookieJar) Cookies(u *url.URL) []*http.Cookie {
 func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 	jar := NewCookieJar()
 	jar.SetCookies(nil, []*http.Cookie{
-		&http.Cookie{
+		{
 			Name:  "X-APPLE-WEBAUTH-TOKEN",
 			Value: accessToken,
 		},
-		&http.Cookie{
+		{
 			Name:  "X-APPLE-WEBAUTH-USER",
 			Value: webauthUser,
 		},
@@ -80,7 +80,7 @@ func (drive *Drive) ValidateToken() error {
 	if err != nil {
 		return err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (drive *Drive) GetNodeData(node *Node) (*Node, error) {
 
 func (drive *Drive) getNodeData(drivewsid string) (*Node, error) {
 	payload := []GetNodeDataRequest{
-		GetNodeDataRequest{
+		{
 			Drivewsid: drivewsid,
 		},
 	}
@@ -155,7 +155,7 @@ func (drive *Drive) getNodeData(drivewsid string) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (node *Node) setChildren(children *[]Node) {
 	if children == nil {
 		return
 	}
-	for idx, _ := range *children {
+	for idx := range *children {
 		(*children)[idx].parent = node
 	}
 	node.children = children
@@ -268,7 +268,7 @@ func (drive *Drive) enumerateRecentDocs() (*EnumerateResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (drive *Drive) GetData(node *Node) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func (drive *Drive) GetData(node *Node) ([]byte, error) {
 	if resp.StatusCode == http.StatusBadRequest {
 		return []byte{}, nil
 	}
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func (drive *Drive) WriteData(node *Node, data []byte) error {
@@ -371,7 +371,7 @@ func (drive *Drive) WriteData(node *Node, data []byte) error {
 		return err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -410,7 +410,7 @@ func (drive *Drive) uploadFileData(node *Node) (*UploadURLResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
