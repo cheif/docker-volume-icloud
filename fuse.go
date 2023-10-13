@@ -22,6 +22,7 @@ var _ = (fs.InodeEmbedder)((*iCloudInode)(nil))
 
 var _ = (fs.NodeLookuper)((*iCloudInode)(nil))
 var _ = (fs.NodeSetattrer)((*iCloudInode)(nil))
+var _ = (fs.NodeGetattrer)((*iCloudInode)(nil))
 
 func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	children, err := inode.drive.GetChildren(inode.node)
@@ -34,8 +35,11 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 		if node.Filename() == name {
 			out.Mode = 0644
 			out.Size = node.Size
-			out.Ctime = uint64(node.DateCreated.Unix())
-			out.Mtime = uint64(node.DateChanged.Unix())
+			out.SetTimes(
+				nil,
+				&node.DateChanged,
+				nil,
+			)
 			return inode.generateInode(ctx, &node), 0
 		}
 	}
@@ -47,8 +51,19 @@ func (inode *iCloudInode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse
 	return 0
 }
 
+func (inode *iCloudInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = 0644
+	out.Size = inode.node.Size
+	out.SetTimes(
+		nil,
+		&inode.node.DateChanged,
+		nil,
+	)
+	return 0
+}
+
 func (inode *iCloudInode) generateInode(ctx context.Context, node *icloud.Node) *fs.Inode {
-	return inode.NewPersistentInode(
+	newNode := inode.NewInode(
 		ctx,
 		&iCloudInode{
 			node:  node,
@@ -56,10 +71,12 @@ func (inode *iCloudInode) generateInode(ctx context.Context, node *icloud.Node) 
 		},
 		stableAttr(node),
 	)
+	log.Println("New iNnode", newNode, node.DateChanged)
+	return newNode
 }
 
 func stableAttr(node *icloud.Node) fs.StableAttr {
-	attr := fs.StableAttr{Ino: node.Hash()}
+	attr := fs.StableAttr{}
 	if node.Extension == nil {
 		// TODO: This is a directory, probably a better way to test this?
 		attr.Mode = fuse.S_IFDIR
@@ -124,15 +141,6 @@ type iCloudFile struct {
 var _ = (fs.FileReader)((*iCloudFile)(nil))
 var _ = (fs.FileWriter)((*iCloudFile)(nil))
 var _ = (fs.FileFlusher)((*iCloudFile)(nil))
-var _ = (fs.FileGetattrer)((*iCloudFile)(nil))
-
-func (file *iCloudFile) Getattr(ctx context.Context, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = 0644
-	out.Size = file.inode.node.Size
-	out.Ctime = uint64(file.inode.node.DateCreated.Unix())
-	out.Mtime = uint64(file.inode.node.DateChanged.Unix())
-	return 0
-}
 
 func (file *iCloudFile) ensureDataFetched() syscall.Errno {
 	if file.data == nil {

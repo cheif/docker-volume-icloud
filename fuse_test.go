@@ -30,6 +30,10 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	statBefore, err := os.Stat("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
 
 	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
 
@@ -47,6 +51,15 @@ func TestWrite(t *testing.T) {
 	diff := diff(after, expected)
 	if len(diff) > 0 {
 		t.Errorf(diff)
+	}
+
+	statAfter, err := os.Stat("/mnt/testfile.txt")
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !statAfter.ModTime().After(statBefore.ModTime()) {
+		t.Errorf("ModTime hasn't changed, was: %s, now: %s", statBefore.ModTime(), statBefore.ModTime())
 	}
 }
 
