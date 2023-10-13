@@ -89,13 +89,16 @@ func (drive *Drive) ValidateToken() error {
 	if response == nil {
 		return fmt.Errorf("Unable to validate token")
 	}
-	// FIXME: This seems ot return without error even if PrimaryEmail == "", seen happening with an old token
+	if response.DsInfo == nil {
+		return fmt.Errorf("Error when validating token: %v", response.Error)
+	}
 	log.Println("Validated token for:", response.DsInfo.PrimaryEmail)
 	return nil
 }
 
 type TokenResponse struct {
-	DsInfo DsInfo `json:"dsInfo"`
+	Error  *string `json:"error"`
+	DsInfo *DsInfo `json:"dsInfo"`
 }
 
 type DsInfo struct {

@@ -48,3 +48,15 @@ func TestListenToChanges(t *testing.T) {
 	}
 	log.Println("New DateChanged:", file.DateChanged)
 }
+
+func TestValidateToken(t *testing.T) {
+	client := http.Client{}
+	client.Jar = AuthenticatedJar("", "")
+	drive := Drive{
+		client: client,
+	}
+	err := drive.ValidateToken()
+	if err == nil {
+		t.Errorf("ValidateToken didn't error out with empty token/user")
+	}
+}
