@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +70,239 @@ func NewDrive(client http.Client) Drive {
 	}
 }
 
+type SessionData struct {
+	SessionToken      string `json:"sessionToken"`
+	AccountCountyCode string `json:"accountCountryCode"`
+	Scnt              string `json:"scnt"`
+	SessionId         string `json:"sessionId"`
+}
+
+func newSessionData(headers http.Header) (*SessionData, error) {
+	sessionToken := headers.Get("X-Apple-Session-Token")
+	accountCountryCode := headers.Get("X-Apple-Id-Account-Country")
+	if sessionToken == "" || accountCountryCode == "" {
+		return nil, fmt.Errorf("Could not find required headers in %v", headers)
+	}
+	sessionData := &SessionData{
+		SessionToken:      sessionToken,
+		AccountCountyCode: accountCountryCode,
+		Scnt:              headers.Get("Scnt"),
+		SessionId:         headers.Get("X-Apple-ID-Session-Id"),
+	}
+	return sessionData, nil
+}
+
+func RestoreSession(path string) (*Drive, error) {
+	dat, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var sessionData SessionData
+	err = json.Unmarshal(dat, &sessionData)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewDriveForSession(sessionData)
+}
+
+func NewDriveForSession(sessionData SessionData) (*Drive, error) {
+	client := http.Client{}
+	client.Jar = NewCookieJar()
+	drive := NewDrive(client)
+	requires2FA, err := drive.authenticate(sessionData)
+	if err != nil {
+		return nil, err
+	}
+	if requires2FA {
+		return nil, fmt.Errorf("2FA not supported in non-interactive flow")
+	}
+	return &drive, nil
+}
+
+func NewSessionData(username string, password string) (*SessionData, error) {
+	client := http.Client{}
+	client.Jar = NewCookieJar()
+	drive := NewDrive(client)
+	sessionData, err := drive.login(username, password)
+	if err != nil {
+		return nil, err
+	}
+	requires2FA, err := drive.authenticate(*sessionData)
+	if err != nil {
+		return nil, err
+	}
+	if requires2FA {
+		fmt.Println("Enter security code:")
+		var code string
+		fmt.Scanln(&code)
+		err = drive.validate2FA(code, sessionData)
+		if err != nil {
+			return nil, err
+		}
+
+		return drive.trustSession(sessionData)
+	}
+	return sessionData, nil
+}
+
+func (drive *Drive) login(username string, password string) (*SessionData, error) {
+	payload := LoginRequest{
+		AccountName: username,
+		Password:    password,
+		RememberMe:  true,
+	}
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	req, err := http.NewRequest("POST", "https://idmsa.apple.com/appleauth/auth/signin", buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+
+	req.Header.Add("X-Apple-Widget-Key", "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d")
+
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	response := new(LoginResponse)
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return nil, err
+	}
+	return newSessionData(resp.Header)
+}
+
+type LoginRequest struct {
+	AccountName string `json:"accountName"`
+	Password    string `json:"password"`
+	RememberMe  bool   `json:"rememberMe"`
+}
+
+type LoginResponse struct {
+	AuthType string `json:"authType"`
+}
+
+func (drive *Drive) validate2FA(code string, sessionData *SessionData) error {
+	payload := ValidateCodeRequest{
+		SecurityCode: SecurityCode{
+			Code: code,
+		},
+	}
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	req, err := http.NewRequest("POST", "https://idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode", buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+
+	req.Header.Add("Scnt", sessionData.Scnt)
+	req.Header.Add("X-Apple-ID-Session-Id", sessionData.SessionId)
+	req.Header.Add("X-Apple-Widget-Key", "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d")
+
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	response := string(body)
+	if len(response) == 0 {
+		return nil
+	} else {
+		return fmt.Errorf("Error when validating 2fa code: %v", response)
+	}
+}
+
+type SecurityCode struct {
+	Code string `json:"code"`
+}
+
+type ValidateCodeRequest struct {
+	SecurityCode SecurityCode `json:"securityCode"`
+}
+
+func (drive *Drive) trustSession(sessionData *SessionData) (*SessionData, error) {
+	req, err := http.NewRequest("GET", "https://idmsa.apple.com/appleauth/auth/2sv/trust", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+
+	req.Header.Add("Scnt", sessionData.Scnt)
+	req.Header.Add("X-Apple-ID-Session-Id", sessionData.SessionId)
+	req.Header.Add("X-Apple-Widget-Key", "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d")
+	req.Header.Add("X-Apple-Session-Token", sessionData.SessionToken)
+
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	response := string(body)
+	if len(response) == 0 {
+		return newSessionData(resp.Header)
+	} else {
+		return nil, fmt.Errorf("Error when validating 2fa code: %v", response)
+	}
+}
+
+func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
+	payload := AuthenticateRequest{
+		AccountCountyCode: sessionData.AccountCountyCode,
+		DSWebAuthToken:    sessionData.SessionToken,
+		ExtendedLogin:     true,
+	}
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	req, err := http.NewRequest("POST", "https://setup.icloud.com/setup/ws/1/accountLogin", buf)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Add("Origin", "https://www.icloud.com")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+
+	resp, err := drive.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	response := new(TokenResponse)
+	json.Unmarshal(body, &response)
+	if response == nil {
+		return false, fmt.Errorf("Unable to authenticate with token")
+	}
+	requires2FA := response.DsInfo.HSAVersion == 2 && response.HSAChallengeRequired
+	return requires2FA, nil
+}
+
+type AuthenticateRequest struct {
+	AccountCountyCode string `json:"accountCountryCode"`
+	DSWebAuthToken    string `json:"dsWebAuthToken"`
+	ExtendedLogin     bool   `json:"extended_login"`
+}
+
 func (drive *Drive) ValidateToken() error {
 	req, err := http.NewRequest("POST", "https://setup.icloud.com/setup/ws/1/validate", nil)
 	if err != nil {
@@ -90,19 +324,21 @@ func (drive *Drive) ValidateToken() error {
 		return fmt.Errorf("Unable to validate token")
 	}
 	if response.DsInfo == nil {
-		return fmt.Errorf("Error when validating token: %v", response.Error)
+		return fmt.Errorf("Error when validating token: %v", string(body))
 	}
 	log.Println("Validated token for:", response.DsInfo.PrimaryEmail)
 	return nil
 }
 
 type TokenResponse struct {
-	Error  *string `json:"error"`
-	DsInfo *DsInfo `json:"dsInfo"`
+	Error                *int    `json:"error"`
+	DsInfo               *DsInfo `json:"dsInfo"`
+	HSAChallengeRequired bool    `json:"hsaChallengeRequired"`
 }
 
 type DsInfo struct {
 	PrimaryEmail string `json:"primaryEmail"`
+	HSAVersion   int    `json:"hsaVersion"`
 }
 
 func (drive *Drive) GetRootNode() (*Node, error) {

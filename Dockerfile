@@ -16,6 +16,7 @@ RUN set -ex \
     gcc libc-dev fuse
 COPY go.mod go.sum .
 RUN go mod download
+RUN mkdir /mnt/state /mnt/volumes
 
 FROM alpine
 RUN apk update && apk add fuse

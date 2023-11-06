@@ -4,20 +4,6 @@
   "entrypoint": ["/docker-volume-icloud"],
   "env": [
       {
-          "name": "ACCESS_TOKEN",
-          "description": "Your iCloud access token. (The cookie named X-APPLE-WEBAUTH-TOKEN)",
-          "settable": [
-              "value"
-          ]
-      },
-      {
-          "name": "WEBAUTH_USER",
-          "description": "Your iCloud user token. (The cookie named X-APPLE-WEBAUTH-USER)",
-          "settable": [
-              "value"
-          ]
-      },
-      {
           "name": "DEBUG",
           "description": "Debug output",
           "settable": [
@@ -38,5 +24,19 @@
         "path": "/dev/fuse"
     }]
   },
+  "mounts": [
+    {
+      "destination": "/mnt/state",
+      "options": [
+        "rbind"
+      ],
+      "name": "state",
+      "source": "/var/lib/docker/plugins/",
+      "settable": [
+        "source"
+      ],
+      "type": "bind"
+    }
+  ],
   "propagatedmount": "/mnt/volumes"
 }

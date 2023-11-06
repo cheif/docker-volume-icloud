@@ -1,9 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,19 +34,20 @@ type iCloudDriver struct {
 	volumes map[string]*iCloudVolume
 }
 
-func newIcloudDriver(accessToken string, webauthUser string) (*iCloudDriver, error) {
+func newIcloudDriver(statePath string) (*iCloudDriver, error) {
+	drive, err := icloud.RestoreSession(filepath.Join(statePath, "session.json"))
+	if err != nil {
+		return nil, err
+	}
 
-	client := http.Client{}
-	client.Jar = icloud.AuthenticatedJar(accessToken, webauthUser)
-	drive := icloud.NewDrive(client)
-	err := drive.ValidateToken()
+	err = drive.ValidateToken()
 	if err != nil {
 		return nil, err
 	}
 
 	d := &iCloudDriver{
 		root:    "/mnt/volumes",
-		drive:   &drive,
+		drive:   drive,
 		volumes: map[string]*iCloudVolume{},
 	}
 
@@ -204,28 +206,39 @@ func logError(format string, args ...interface{}) error {
 }
 
 func main() {
-	log.SetFlags(log.Lshortfile)
-	log.Println("Starting up..")
-	accessToken := os.Getenv("ACCESS_TOKEN")
-	if accessToken == "" {
-		log.Fatalf("ACCESS_TOKEN required!")
-	}
-	webauthUser := os.Getenv("WEBAUTH_USER")
-	if webauthUser == "" {
-		log.Fatalf("WEBAUTH_USER required!")
-	}
-	d, err := newIcloudDriver(accessToken, webauthUser)
-	if err != nil {
-		log.Fatal(err)
-	}
-	h := volume.NewHandler(d)
-	fmt.Println("Handler gotten")
+	createSession := flag.Bool("create-session", false, "Create a new session, passed to stdout")
+	username := flag.String("username", "", "Username for creating session")
+	password := flag.String("password", "", "Password for creating session")
 
-	fmt.Println("Serving at", socketAddress)
+	flag.Parse()
 
-	err = h.ServeUnix(socketAddress, 0)
-	if err != nil {
-		log.Fatal(err)
+	if *createSession {
+		session, err := icloud.NewSessionData(*username, *password)
+		if err != nil {
+			log.Fatal(err)
+		}
+		bytes, err := json.Marshal(session)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%v", string(bytes))
+		return
+	} else {
+		log.SetFlags(log.Lshortfile)
+		log.Println("Starting up..")
+		d, err := newIcloudDriver("/mnt/state")
+		if err != nil {
+			log.Fatal(err)
+		}
+		h := volume.NewHandler(d)
+		fmt.Println("Handler gotten")
+
+		fmt.Println("Serving at", socketAddress)
+
+		err = h.ServeUnix(socketAddress, 0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("Serving socket")
 	}
-	log.Println("Serving socket")
 }

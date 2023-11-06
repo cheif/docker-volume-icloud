@@ -3,26 +3,16 @@ package icloud
 import (
 	"log"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 )
 
 func TestListenToChanges(t *testing.T) {
-	accessToken := os.Getenv("ACCESS_TOKEN")
-	if accessToken == "" {
-		log.Fatalf("ACCESS_TOKEN required!")
+	drive, err := RestoreSession("/mnt/state/session.json")
+	if err != nil {
+		t.Error(err)
 	}
-	webauthUser := os.Getenv("WEBAUTH_USER")
-	if webauthUser == "" {
-		log.Fatalf("WEBAUTH_USER required!")
-	}
-	client := http.Client{}
-	client.Jar = AuthenticatedJar(accessToken, webauthUser)
-	drive := Drive{
-		client: client,
-	}
-	err := drive.ValidateToken()
+	err = drive.ValidateToken()
 	if err != nil {
 		t.Error(err)
 	}

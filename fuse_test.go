@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"testing"
@@ -19,29 +18,29 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	server, err := fs.Mount("/mnt", inode, nil)
+	server, err := fs.Mount("/mnt/volumes", inode, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer server.Unmount()
 
-	before, err := readString("/mnt/testfile.txt")
+	before, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
-	statBefore, err := os.Stat("/mnt/testfile.txt")
+	statBefore, err := os.Stat("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
 
 	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
 
-	err = appendToFile("/mnt/testfile.txt", toAppend)
+	err = appendToFile("/mnt/volumes/testfile.txt", toAppend)
 	if err != nil {
 		t.Error(err)
 	}
 
-	after, err := readString("/mnt/testfile.txt")
+	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
@@ -52,7 +51,7 @@ func TestWrite(t *testing.T) {
 		t.Errorf(diff)
 	}
 
-	statAfter, err := os.Stat("/mnt/testfile.txt")
+	statAfter, err := os.Stat("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
@@ -67,18 +66,18 @@ func TestReadTwice(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	server, err := fs.Mount("/mnt", inode, nil)
+	server, err := fs.Mount("/mnt/volumes", inode, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer server.Unmount()
 
-	before, err := readString("/mnt/testfile.txt")
+	before, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
 
-	after, err := readString("/mnt/testfile.txt")
+	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
@@ -94,25 +93,25 @@ func TestEchoAndRead(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	server, err := fs.Mount("/mnt", inode, nil)
+	server, err := fs.Mount("/mnt/volumes", inode, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer server.Unmount()
 
-	before, err := readString("/mnt/testfile.txt")
+	before, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
 
 	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
 
-	err = exec.Command("sh", "-c", fmt.Sprintf(`echo -n "%s" >> /mnt/testfile.txt`, toAppend)).Run()
+	err = exec.Command("sh", "-c", fmt.Sprintf(`echo -n "%s" >> /mnt/volumes/testfile.txt`, toAppend)).Run()
 	if err != nil {
 		t.Error(err)
 	}
 
-	after, err := readString("/mnt/testfile.txt")
+	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
 	}
@@ -155,17 +154,10 @@ func appendToFile(filename, fmt string) error {
 }
 
 func createInode() (*iCloudInode, error) {
-	accessToken := os.Getenv("ACCESS_TOKEN")
-	if accessToken == "" {
-		return nil, fmt.Errorf("ACCESS_TOKEN required!")
+	drive, err := icloud.RestoreSession("/mnt/state/session.json")
+	if err != nil {
+		return nil, fmt.Errorf("Connecting to drive failed: %v\n", err)
 	}
-	webauthUser := os.Getenv("WEBAUTH_USER")
-	if webauthUser == "" {
-		return nil, fmt.Errorf("WEBAUTH_USER required!")
-	}
-	client := http.Client{}
-	client.Jar = icloud.AuthenticatedJar(accessToken, webauthUser)
-	drive := icloud.NewDrive(client)
 	drive.ValidateToken()
 	node, err := drive.GetNode("/test/")
 	if err != nil {
@@ -173,7 +165,7 @@ func createInode() (*iCloudInode, error) {
 	}
 	inode := iCloudInode{
 		node:  node,
-		drive: drive,
+		drive: *drive,
 	}
 	return &inode, nil
 }
