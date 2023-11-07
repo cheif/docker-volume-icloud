@@ -9,6 +9,9 @@ go run . --create-session --username <ICLOUD_USERNAME> --password <ICLOUD_PASSWO
 
 This session-file then needs to be provided to the plugin, typically by copying it to `/var/run/docker/plugins`.
 
+### Docker Desktop for Mac
+Since docker runs in a virtual machine on Mac you need a workaround to share the file, using something like [this](https://github.com/rclone/rclone/issues/6981)
+
 ### Installing
 Once the session-file is in place you can install the plugin, this should automatically find the credentials and use them:
 ```sh
