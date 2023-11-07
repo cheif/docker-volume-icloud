@@ -84,6 +84,20 @@ func (d *iCloudDriver) Create(r *volume.CreateRequest) error {
 }
 
 func (d *iCloudDriver) Remove(r *volume.RemoveRequest) error {
+	d.Lock()
+	defer d.Unlock()
+
+	v, ok := d.volumes[r.Name]
+	if !ok {
+		return logError("volume %s not found", r.Name)
+	}
+	if v.connections != 0 {
+		return logError("volume %s is currently used by a container", r.Name)
+	}
+	if err := os.RemoveAll(v.Mountpoint); err != nil {
+		return logError(err.Error())
+	}
+	delete(d.volumes, r.Name)
 	return nil
 }
 
