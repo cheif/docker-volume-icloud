@@ -29,9 +29,10 @@ type iCloudVolume struct {
 type iCloudDriver struct {
 	sync.RWMutex
 
-	root    string
-	drive   *icloud.Drive
-	volumes map[string]*iCloudVolume
+	root      string
+	statePath string
+	drive     *icloud.Drive
+	volumes   map[string]*iCloudVolume
 }
 
 func newIcloudDriver(statePath string) (*iCloudDriver, error) {
@@ -46,12 +47,40 @@ func newIcloudDriver(statePath string) (*iCloudDriver, error) {
 	}
 
 	d := &iCloudDriver{
-		root:    "/mnt/volumes",
-		drive:   drive,
-		volumes: map[string]*iCloudVolume{},
+		root:      "/mnt/volumes",
+		statePath: filepath.Join(statePath, "state.json"),
+		drive:     drive,
+		volumes:   map[string]*iCloudVolume{},
+	}
+
+	if err := d.restoreState(); err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("No state to restore")
+		} else {
+			return nil, err
+		}
 	}
 
 	return d, nil
+}
+
+func (d *iCloudDriver) restoreState() error {
+	data, err := os.ReadFile(d.statePath)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &d.volumes)
+}
+
+func (d *iCloudDriver) saveState() {
+	data, err := json.Marshal(d.volumes)
+	if err != nil {
+		log.Printf("Error marshalling state: %v", err)
+		return
+	}
+	if err := os.WriteFile(d.statePath, data, 0644); err != nil {
+		log.Printf("Error saving state: %v", err)
+	}
 }
 
 func (d *iCloudDriver) Capabilities() *volume.CapabilitiesResponse {
@@ -80,6 +109,8 @@ func (d *iCloudDriver) Create(r *volume.CreateRequest) error {
 
 	d.volumes[r.Name] = v
 
+	d.saveState()
+
 	return nil
 }
 
@@ -98,6 +129,9 @@ func (d *iCloudDriver) Remove(r *volume.RemoveRequest) error {
 		return logError(err.Error())
 	}
 	delete(d.volumes, r.Name)
+
+	d.saveState()
+
 	return nil
 }
 
