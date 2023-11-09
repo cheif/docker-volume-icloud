@@ -75,12 +75,14 @@ type SessionData struct {
 	AccountCountyCode string `json:"accountCountryCode"`
 	Scnt              string `json:"scnt"`
 	SessionId         string `json:"sessionId"`
+	TwoFactorToken    string `json:"twoFactorToken"`
 }
 
 func newSessionData(headers http.Header) (*SessionData, error) {
 	sessionToken := headers.Get("X-Apple-Session-Token")
 	accountCountryCode := headers.Get("X-Apple-Id-Account-Country")
-	if sessionToken == "" || accountCountryCode == "" {
+	twoFactorToken := headers.Get("X-Apple-Twosv-Trust-Token")
+	if sessionToken == "" || accountCountryCode == "" || twoFactorToken == "" {
 		return nil, fmt.Errorf("Could not find required headers in %v", headers)
 	}
 	sessionData := &SessionData{
@@ -88,6 +90,7 @@ func newSessionData(headers http.Header) (*SessionData, error) {
 		AccountCountyCode: accountCountryCode,
 		Scnt:              headers.Get("Scnt"),
 		SessionId:         headers.Get("X-Apple-ID-Session-Id"),
+		TwoFactorToken:    twoFactorToken,
 	}
 	return sessionData, nil
 }
@@ -268,6 +271,7 @@ func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
 	payload := AuthenticateRequest{
 		AccountCountyCode: sessionData.AccountCountyCode,
 		DSWebAuthToken:    sessionData.SessionToken,
+		TrustTokens:       []string{sessionData.TwoFactorToken},
 		ExtendedLogin:     true,
 	}
 	buf := new(bytes.Buffer)
@@ -298,9 +302,10 @@ func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
 }
 
 type AuthenticateRequest struct {
-	AccountCountyCode string `json:"accountCountryCode"`
-	DSWebAuthToken    string `json:"dsWebAuthToken"`
-	ExtendedLogin     bool   `json:"extended_login"`
+	AccountCountyCode string   `json:"accountCountryCode"`
+	DSWebAuthToken    string   `json:"dsWebAuthToken"`
+	TrustTokens       []string `json:"trustTokens"`
+	ExtendedLogin     bool     `json:"extended_login"`
 }
 
 func (drive *Drive) ValidateToken() error {
