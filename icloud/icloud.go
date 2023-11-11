@@ -71,6 +71,8 @@ func NewDrive(client http.Client) Drive {
 }
 
 type SessionData struct {
+	Username          string `json:"username"`
+	Password          string `json:"password"`
 	SessionToken      string `json:"sessionToken"`
 	AccountCountyCode string `json:"accountCountryCode"`
 	Scnt              string `json:"scnt"`
@@ -81,8 +83,7 @@ type SessionData struct {
 func newSessionData(headers http.Header) (*SessionData, error) {
 	sessionToken := headers.Get("X-Apple-Session-Token")
 	accountCountryCode := headers.Get("X-Apple-Id-Account-Country")
-	twoFactorToken := headers.Get("X-Apple-Twosv-Trust-Token")
-	if sessionToken == "" || accountCountryCode == "" || twoFactorToken == "" {
+	if sessionToken == "" || accountCountryCode == "" {
 		return nil, fmt.Errorf("Could not find required headers in %v", headers)
 	}
 	sessionData := &SessionData{
@@ -90,7 +91,7 @@ func newSessionData(headers http.Header) (*SessionData, error) {
 		AccountCountyCode: accountCountryCode,
 		Scnt:              headers.Get("Scnt"),
 		SessionId:         headers.Get("X-Apple-ID-Session-Id"),
-		TwoFactorToken:    twoFactorToken,
+		TwoFactorToken:    headers.Get("X-Apple-Twosv-Trust-Token"),
 	}
 	return sessionData, nil
 }
@@ -115,6 +116,11 @@ func NewDriveForSession(sessionData SessionData) (*Drive, error) {
 	drive := NewDrive(client)
 	requires2FA, err := drive.authenticate(sessionData)
 	if err != nil {
+		// Getting an error here probably means that the session-token is old, try to login using the sessionData, to get a new session instead
+		newSessionData, err := drive.loginUsingSession(sessionData)
+		if err == nil {
+			return NewDriveForSession(*newSessionData)
+		}
 		return nil, err
 	}
 	if requires2FA {
@@ -127,7 +133,7 @@ func NewSessionData(username string, password string) (*SessionData, error) {
 	client := http.Client{}
 	client.Jar = NewCookieJar()
 	drive := NewDrive(client)
-	sessionData, err := drive.login(username, password)
+	sessionData, err := drive.login(username, password, []string{})
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +152,29 @@ func NewSessionData(username string, password string) (*SessionData, error) {
 
 		return drive.trustSession(sessionData)
 	}
+	// Manually set username/password, since it's needed to get new sessions down the line (I think)
+	sessionData.Username = username
+	sessionData.Password = password
 	return sessionData, nil
 }
 
-func (drive *Drive) login(username string, password string) (*SessionData, error) {
+func (drive *Drive) loginUsingSession(sessionData SessionData) (*SessionData, error) {
+	newSession, err := drive.login(sessionData.Username, sessionData.Password, []string{sessionData.TwoFactorToken})
+	// Copy some properties from the old session, that's probably not generated again
+	if newSession.TwoFactorToken == "" {
+		newSession.TwoFactorToken = sessionData.TwoFactorToken
+	}
+	newSession.Username = sessionData.Username
+	newSession.Password = sessionData.Password
+	return newSession, err
+}
+
+func (drive *Drive) login(username string, password string, trustTokens []string) (*SessionData, error) {
 	payload := LoginRequest{
 		AccountName: username,
 		Password:    password,
 		RememberMe:  true,
+		TrustTokens: trustTokens,
 	}
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(payload)
@@ -184,9 +205,10 @@ func (drive *Drive) login(username string, password string) (*SessionData, error
 }
 
 type LoginRequest struct {
-	AccountName string `json:"accountName"`
-	Password    string `json:"password"`
-	RememberMe  bool   `json:"rememberMe"`
+	AccountName string   `json:"accountName"`
+	Password    string   `json:"password"`
+	RememberMe  bool     `json:"rememberMe"`
+	TrustTokens []string `json:"trustTokens"`
 }
 
 type LoginResponse struct {
