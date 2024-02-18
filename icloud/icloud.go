@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -107,10 +108,19 @@ func RestoreSession(path string) (*Drive, error) {
 		return nil, err
 	}
 
-	return NewDriveForSession(sessionData)
+	log.Println("sessionData", sessionData)
+	drive, newSession, err := newDriveForSession(sessionData)
+	if err != nil {
+		return nil, err
+	}
+	dat, err = json.Marshal(newSession)
+	if err == nil {
+		os.WriteFile(path, dat, 0644)
+	}
+	return drive, nil
 }
 
-func NewDriveForSession(sessionData SessionData) (*Drive, error) {
+func newDriveForSession(sessionData SessionData) (*Drive, *SessionData, error) {
 	client := http.Client{}
 	client.Jar = NewCookieJar()
 	drive := NewDrive(client)
@@ -119,14 +129,113 @@ func NewDriveForSession(sessionData SessionData) (*Drive, error) {
 		// Getting an error here probably means that the session-token is old, try to login using the sessionData, to get a new session instead
 		newSessionData, err := drive.loginUsingSession(sessionData)
 		if err == nil {
-			return NewDriveForSession(*newSessionData)
+			return newDriveForSession(*newSessionData)
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	if requires2FA {
-		return nil, fmt.Errorf("2FA not supported in non-interactive flow")
+		return nil, nil, fmt.Errorf("Session requires 2fa, create a new instead")
+		log.Println("Waiting for verification code at :5000")
+		sock, _ := net.Listen("tcp", ":5000")
+		client, err := sock.Accept()
+		if err != nil {
+			return nil, nil, err
+		}
+		_, err = fmt.Fprintln(client, "Verification code:")
+		if err != nil {
+			return nil, nil, err
+		}
+		buf := make([]byte, 256)
+		_, err = client.Read(buf)
+		client.Close()
+		code := string(buf)
+		err = drive.validate2FA(code, &sessionData)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		newSessionData, err := drive.trustSession(&sessionData)
+		if err != nil {
+			return nil, nil, err
+		}
+		return newDriveForSession(*newSessionData)
 	}
-	return &drive, nil
+	return &drive, &sessionData, nil
+}
+
+func CreateNewSessionInteractive(port string, storagePath string) (*Drive, error) {
+	drive, newSessionData, err := createNewSessionInteractive(port)
+	if err != nil {
+		return nil, err
+	}
+
+	dat, err := json.Marshal(newSessionData)
+	if err == nil {
+		os.WriteFile(storagePath, dat, 0644)
+	}
+	return drive, nil
+}
+
+func createNewSessionInteractive(port string) (*Drive, *SessionData, error) {
+	log.Println("Creating interactive session over telnet")
+	sock, _ := net.Listen("tcp", port)
+	conn, err := sock.Accept()
+	defer conn.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	username, err := getString(conn, "username/email:")
+	if err != nil {
+		return nil, nil, err
+	}
+	password, err := getString(conn, "password:")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client := http.Client{}
+	client.Jar = NewCookieJar()
+	drive := NewDrive(client)
+	sessionData, err := drive.login(username, password, []string{})
+	if err != nil {
+		return nil, nil, err
+	}
+	requires2FA, err := drive.authenticate(*sessionData)
+	if err != nil {
+		return nil, nil, err
+	}
+	if requires2FA {
+		verificationCode, err := getString(conn, "2FA verification code:")
+		if err != nil {
+			return nil, nil, err
+		}
+		err = drive.validate2FA(verificationCode, sessionData)
+		if err != nil {
+			return nil, nil, err
+		}
+		newSessionData, err := drive.trustSession(sessionData)
+		if err != nil {
+			return nil, nil, err
+		}
+		return newDriveForSession(*newSessionData)
+	} else {
+		return &drive, sessionData, nil
+	}
+}
+
+func getString(conn net.Conn, prompt string) (string, error) {
+	_, err := fmt.Fprintln(conn, prompt)
+	if err != nil {
+		return "", err
+	}
+	buf := make([]byte, 256)
+	len, err := conn.Read(buf)
+	if err != nil {
+		return "", err
+	}
+	res := string(buf[:len])
+
+	return strings.TrimSuffix(res, "\r\n"), nil
 }
 
 func NewSessionData(username string, password string) (*SessionData, error) {
@@ -142,7 +251,7 @@ func NewSessionData(username string, password string) (*SessionData, error) {
 		return nil, err
 	}
 	if requires2FA {
-		fmt.Println("Enter security code:")
+		log.Println("Enter security code:")
 		var code string
 		fmt.Scanln(&code)
 		err = drive.validate2FA(code, sessionData)

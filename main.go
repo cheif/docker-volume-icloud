@@ -36,14 +36,10 @@ type iCloudDriver struct {
 }
 
 func newIcloudDriver(statePath string) (*iCloudDriver, error) {
-	drive, err := icloud.RestoreSession(filepath.Join(statePath, "session.json"))
+	sessionPath := filepath.Join(statePath, "session.json")
+	drive, err := icloud.RestoreSession(sessionPath)
 	if err != nil {
-		return nil, err
-	}
-
-	err = drive.ValidateToken()
-	if err != nil {
-		return nil, err
+		// This usually just means there's no session to restore, and this is handled below
 	}
 
 	d := &iCloudDriver{
@@ -61,7 +57,20 @@ func newIcloudDriver(statePath string) (*iCloudDriver, error) {
 		}
 	}
 
+	if d.drive == nil {
+		// No drive has been initialized, start a telnet-session to be able to do this async
+		go d.initiateInteractiveSession(sessionPath)
+	}
+
 	return d, nil
+}
+
+func (d *iCloudDriver) initiateInteractiveSession(sessionPath string) {
+	drive, err := icloud.CreateNewSessionInteractive(":5000", sessionPath)
+	if err != nil {
+		panic("Handle this better")
+	}
+	d.drive = drive
 }
 
 func (d *iCloudDriver) restoreState() error {
@@ -83,12 +92,23 @@ func (d *iCloudDriver) saveState() {
 	}
 }
 
+func (d *iCloudDriver) checkIfHasSession() error {
+	if d.drive == nil {
+		return fmt.Errorf("Session not configured. Telnet to :5000 to configure it")
+	}
+	return nil
+}
+
 func (d *iCloudDriver) Capabilities() *volume.CapabilitiesResponse {
 	return &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "local"}}
 }
 
 // volume.Driver implementation
 func (d *iCloudDriver) Create(r *volume.CreateRequest) error {
+	err := d.checkIfHasSession()
+	if err != nil {
+		return err
+	}
 	log.Println("Creating volume", r.Name)
 
 	d.Lock()
@@ -115,6 +135,10 @@ func (d *iCloudDriver) Create(r *volume.CreateRequest) error {
 }
 
 func (d *iCloudDriver) Remove(r *volume.RemoveRequest) error {
+	err := d.checkIfHasSession()
+	if err != nil {
+		return err
+	}
 	d.Lock()
 	defer d.Unlock()
 
@@ -136,6 +160,10 @@ func (d *iCloudDriver) Remove(r *volume.RemoveRequest) error {
 }
 
 func (d *iCloudDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
+	err := d.checkIfHasSession()
+	if err != nil {
+		return nil, err
+	}
 	log.Println("Getting", r)
 
 	d.Lock()
@@ -150,6 +178,10 @@ func (d *iCloudDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 }
 
 func (d *iCloudDriver) List() (*volume.ListResponse, error) {
+	err := d.checkIfHasSession()
+	if err != nil {
+		return nil, err
+	}
 	d.Lock()
 	defer d.Unlock()
 
@@ -161,6 +193,10 @@ func (d *iCloudDriver) List() (*volume.ListResponse, error) {
 }
 
 func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
+	err := d.checkIfHasSession()
+	if err != nil {
+		return nil, err
+	}
 	log.Println("Mount", r)
 	d.Lock()
 	defer d.Unlock()
@@ -215,6 +251,10 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 
 func (d *iCloudDriver) Unmount(r *volume.UnmountRequest) error {
 	log.Println("Unmount", r)
+	err := d.checkIfHasSession()
+	if err != nil {
+		return err
+	}
 	d.Lock()
 	defer d.Unlock()
 
@@ -236,6 +276,10 @@ func (d *iCloudDriver) Unmount(r *volume.UnmountRequest) error {
 
 func (d *iCloudDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	log.Println("Path", r)
+	err := d.checkIfHasSession()
+	if err != nil {
+		return nil, err
+	}
 	d.RLock()
 	defer d.RUnlock()
 
