@@ -31,7 +31,7 @@
         "rbind"
       ],
       "name": "state",
-      "source": "/private/var/lib/docker/plugins/",
+      "source": "/var/lib/docker/plugins/",
       "settable": [
         "source"
       ],
