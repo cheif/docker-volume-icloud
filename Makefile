@@ -1,7 +1,7 @@
 plugin/rootfs: *.go */**.go
-	docker build -t docker-volume-icloud --platform linux/amd64 .
+	docker build -t docker-volume-icloud --platform linux/arm64 .
 	mkdir -p plugin/rootfs
-	docker export "`docker create --platform linux/amd64 docker-volume-icloud true`" | tar -x -C plugin/rootfs
+	docker export "`docker create --platform linux/arm64 docker-volume-icloud true`" | tar -x -C plugin/rootfs
 
 cheif/icloud: plugin/rootfs
 	- docker plugin rm -f cheif/icloud
