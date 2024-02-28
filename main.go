@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ type iCloudVolume struct {
 	Mountpoint  string
 	connections int
 	server      *fuse.Server
+	cancelFunc  func()
 }
 
 type iCloudDriver struct {
@@ -243,6 +245,20 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 		}
 		log.Printf("Serving: %v\n", server)
 		v.server = server
+		ctx, cancelFunc := context.WithCancel(context.Background())
+		v.cancelFunc = cancelFunc
+		go func(ctx context.Context) {
+			ticker := time.NewTicker(5 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					log.Println("Tick")
+					inode.ResetFileSystemCacheIfStale()
+				}
+			}
+		}(ctx)
 	}
 
 	v.connections++
@@ -269,6 +285,7 @@ func (d *iCloudDriver) Unmount(r *volume.UnmountRequest) error {
 		if err := v.server.Unmount(); err != nil {
 			return logError(err.Error())
 		}
+		v.cancelFunc()
 		v.connections = 0
 	}
 	return nil

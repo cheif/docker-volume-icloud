@@ -62,7 +62,6 @@ func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 type Drive struct {
 	client             http.Client
 	continuationMarker *string
-	root               *Node
 }
 
 func NewDrive(client http.Client) Drive {
@@ -478,28 +477,19 @@ type DsInfo struct {
 }
 
 func (drive *Drive) GetRootNode() (*Node, error) {
-	if drive.root != nil {
-		changes, _ := drive.getNewChanges()
-		if !changes {
-			return drive.root, nil
-		}
-	}
-	root, err := drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
-	if err != nil {
-		return nil, err
-	}
-	drive.root = root
-	return root, nil
+	return drive.getNodeData("FOLDER::com.apple.CloudDocs::root")
 }
 
 func (drive *Drive) GetNodeData(node *Node) (*Node, error) {
 	// This is a proxy for if this node already has all data, or if we need to fetch it to get children etc.
-	if !node.shallow {
-		changes, _ := drive.getNewChanges()
-		if !changes {
-			return node, nil
-		}
+	if node.shallow {
+		return drive.RefreshNodeData(node)
+	} else {
+		return node, nil
 	}
+}
+
+func (drive *Drive) RefreshNodeData(node *Node) (*Node, error) {
 	data, err := drive.getNodeData(node.drivewsid)
 	if err != nil {
 		return nil, err
@@ -585,7 +575,9 @@ func (node *Node) setChildren(children *[]Node) {
 // This tries to make sure that we dont keep stale references cached.
 // It does so by enumerating recent docs, which gives us a marker that we can then poll until iCloud tells us things have changed.
 // When this happens we get a new marker, and returns true, so that other parts of the package can re-fetch data.
-func (drive *Drive) getNewChanges() (bool, error) {
+//
+// This method was derived from observing what's happening on iCloud.com, and is indeed very crude, but seems to do the trick.
+func (drive *Drive) CheckIfHasNewChanges() (bool, error) {
 	var hasChanges bool
 	var err error
 	if drive.continuationMarker != nil {

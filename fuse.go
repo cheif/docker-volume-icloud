@@ -24,6 +24,19 @@ var _ = (fs.NodeLookuper)((*iCloudInode)(nil))
 var _ = (fs.NodeSetattrer)((*iCloudInode)(nil))
 var _ = (fs.NodeGetattrer)((*iCloudInode)(nil))
 
+func (inode *iCloudInode) ResetFileSystemCacheIfStale() {
+	if len(inode.Children()) > 0 {
+		// We've got cached data, check if it has changed
+		hasChanges, _ := inode.drive.CheckIfHasNewChanges()
+		if hasChanges {
+			inode.node, _ = inode.drive.RefreshNodeData(inode.node)
+			for _, child := range inode.Children() {
+				inode.NotifyEntry(child.Path(nil))
+			}
+		}
+	}
+}
+
 func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	children, err := inode.drive.GetChildren(inode.node)
 	if err != nil {
