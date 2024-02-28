@@ -254,7 +254,6 @@ func (d *iCloudDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, err
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					log.Println("Tick")
 					inode.ResetFileSystemCacheIfStale()
 				}
 			}

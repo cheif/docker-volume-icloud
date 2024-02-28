@@ -84,7 +84,6 @@ func (inode *iCloudInode) generateInode(ctx context.Context, node *icloud.Node) 
 		},
 		stableAttr(node),
 	)
-	log.Println("New iNnode", newNode, node.DateChanged)
 	return newNode
 }
 
