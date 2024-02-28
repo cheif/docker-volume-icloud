@@ -268,6 +268,9 @@ func NewSessionData(username string, password string) (*SessionData, error) {
 
 func (drive *Drive) loginUsingSession(sessionData SessionData) (*SessionData, error) {
 	newSession, err := drive.login(sessionData.Username, sessionData.Password, []string{sessionData.TwoFactorToken})
+	if err != nil {
+		return nil, err
+	}
 	// Copy some properties from the old session, that's probably not generated again
 	if newSession.TwoFactorToken == "" {
 		newSession.TwoFactorToken = sessionData.TwoFactorToken
@@ -421,6 +424,9 @@ func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return false, err
+	}
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("Incorrect status code: %v", resp.StatusCode)
 	}
 	response := new(TokenResponse)
 	json.Unmarshal(body, &response)
