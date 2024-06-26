@@ -315,13 +315,12 @@ func logError(format string, args ...interface{}) error {
 
 func main() {
 	createSession := flag.Bool("create-session", false, "Create a new session, passed to stdout")
-	username := flag.String("username", "", "Username for creating session")
-	password := flag.String("password", "", "Password for creating session")
+	statePath := "/mnt/state"
 
 	flag.Parse()
 
 	if *createSession {
-		session, err := icloud.NewSessionData(*username, *password)
+		session, err := icloud.CreateNewSessionInteractive(":5000", filepath.Join(statePath, "session.json"))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -334,7 +333,7 @@ func main() {
 	} else {
 		log.SetFlags(log.Lshortfile)
 		log.Println("Starting up..")
-		d, err := newIcloudDriver("/mnt/state")
+		d, err := newIcloudDriver(statePath)
 		if err != nil {
 			log.Fatal(err)
 		}

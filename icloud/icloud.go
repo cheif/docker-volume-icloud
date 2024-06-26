@@ -134,30 +134,6 @@ func newDriveForSession(sessionData SessionData) (*Drive, *SessionData, error) {
 	}
 	if requires2FA {
 		return nil, nil, fmt.Errorf("Session requires 2fa, create a new instead")
-		log.Println("Waiting for verification code at :5000")
-		sock, _ := net.Listen("tcp", ":5000")
-		client, err := sock.Accept()
-		if err != nil {
-			return nil, nil, err
-		}
-		_, err = fmt.Fprintln(client, "Verification code:")
-		if err != nil {
-			return nil, nil, err
-		}
-		buf := make([]byte, 256)
-		_, err = client.Read(buf)
-		client.Close()
-		code := string(buf)
-		err = drive.validate2FA(code, &sessionData)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		newSessionData, err := drive.trustSession(&sessionData)
-		if err != nil {
-			return nil, nil, err
-		}
-		return newDriveForSession(*newSessionData)
 	}
 	return &drive, &sessionData, nil
 }
@@ -235,35 +211,6 @@ func getString(conn net.Conn, prompt string) (string, error) {
 	res := string(buf[:len])
 
 	return strings.TrimSuffix(res, "\r\n"), nil
-}
-
-func NewSessionData(username string, password string) (*SessionData, error) {
-	client := http.Client{}
-	client.Jar = NewCookieJar()
-	drive := NewDrive(client)
-	sessionData, err := drive.login(username, password, []string{})
-	if err != nil {
-		return nil, err
-	}
-	requires2FA, err := drive.authenticate(*sessionData)
-	if err != nil {
-		return nil, err
-	}
-	if requires2FA {
-		log.Println("Enter security code:")
-		var code string
-		fmt.Scanln(&code)
-		err = drive.validate2FA(code, sessionData)
-		if err != nil {
-			return nil, err
-		}
-
-		return drive.trustSession(sessionData)
-	}
-	// Manually set username/password, since it's needed to get new sessions down the line (I think)
-	sessionData.Username = username
-	sessionData.Password = password
-	return sessionData, nil
 }
 
 func (drive *Drive) loginUsingSession(sessionData SessionData) (*SessionData, error) {
