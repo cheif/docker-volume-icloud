@@ -60,7 +60,18 @@ func (inode *iCloudInode) Lookup(ctx context.Context, name string, out *fuse.Ent
 }
 
 func (inode *iCloudInode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
-	log.Println("No-Op SetAttr", f, in)
+	var current fuse.AttrOut
+	eno := inode.Getattr(ctx, f, &current)
+	if eno != 0 {
+		return eno
+	}
+	if in.Size < current.Size {
+		if file, ok := f.(*iCloudFile); ok {
+			// File should be truncated
+			_, eno = file.Write(ctx, []byte{}, int64(in.Size))
+			return eno
+		}
+	}
 	return 0
 }
 
@@ -194,6 +205,7 @@ func (file *iCloudFile) Write(ctx context.Context, data []byte, off int64) (writ
 		*file.data = n
 	}
 	copy((*file.data)[off:end], data)
+	*file.data = (*file.data)[:end]
 	file.dirty = true
 	return uint32(len(data)), 0
 }

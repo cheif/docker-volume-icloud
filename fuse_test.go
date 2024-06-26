@@ -63,6 +63,64 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestTruncate(t *testing.T) {
+	inode, err := createInode()
+	if err != nil {
+		t.Error(err)
+	}
+	server, err := fs.Mount("/mnt/volumes", inode, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer server.Unmount()
+	filename := "/mnt/volumes/testfile.txt"
+
+	toAppend := fmt.Sprintf("%s\n", time.Now().Format("2006-01-02T15:04:05"))
+
+	err = appendToFile(filename, toAppend)
+	if err != nil {
+		t.Error(err)
+	}
+
+	inode.ResetFileSystemCacheIfStale()
+
+	before, err := readString(filename)
+	if err != nil {
+		t.Error(err)
+	}
+	statBefore, err := os.Stat(filename)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = truncateFile(filename, statBefore.Size()-10)
+	if err != nil {
+		t.Error(err)
+	}
+
+	inode.ResetFileSystemCacheIfStale()
+
+	after, err := readString(filename)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := before[:len(before)-10]
+	diff := diff(after, expected)
+	if len(diff) > 0 {
+		t.Errorf(diff)
+	}
+
+	statAfter, err := os.Stat(filename)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !statAfter.ModTime().After(statBefore.ModTime()) {
+		t.Errorf("ModTime hasn't changed, was: %s, now: %s", statBefore.ModTime(), statBefore.ModTime())
+	}
+}
+
 func TestReadTwice(t *testing.T) {
 	inode, err := createInode()
 	if err != nil {
@@ -155,6 +213,16 @@ func appendToFile(filename, fmt string) error {
 	defer f.Close()
 	_, err = f.WriteString(fmt)
 	return err
+}
+
+func truncateFile(filename string, newLength int64) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return f.Truncate(newLength)
 }
 
 func createInode() (*iCloudInode, error) {
