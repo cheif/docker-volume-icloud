@@ -17,7 +17,7 @@ install: cheif/icloud
 # Fire up a test-environment
 testenv:
 	docker build --target test-environment -t test-environment .
-	docker run --device /dev/fuse --privileged -it --rm -p 5000:5000 -v `pwd`:/go/src/github.com/cheif/docker-volume-icloud \
+	docker run --device /dev/fuse --privileged -it --rm -p 5001:5000 -v `pwd`:/go/src/github.com/cheif/docker-volume-icloud -v icloud-state:/mnt/state \
 		test-environment sh
 
 clean:
