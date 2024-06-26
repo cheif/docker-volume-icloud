@@ -162,7 +162,6 @@ func createInode() (*iCloudInode, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Connecting to drive failed: %v\n", err)
 	}
-	drive.ValidateToken()
 	node, err := drive.GetNode("/test/")
 	if err != nil {
 		return nil, fmt.Errorf("Connecting to drive failed: %v\n", err)

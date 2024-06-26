@@ -19,12 +19,15 @@ import (
 type CookieJar struct {
 	sync.Mutex
 
-	cookies map[string]*http.Cookie
+	cookies map[string]http.Cookie
 }
 
-func NewCookieJar() *CookieJar {
+func NewCookieJar(cookies []http.Cookie) *CookieJar {
 	jar := new(CookieJar)
-	jar.cookies = make(map[string]*http.Cookie)
+	jar.cookies = make(map[string]http.Cookie)
+	for _, cookie := range cookies {
+		jar.cookies[cookie.Name] = cookie
+	}
 	return jar
 }
 
@@ -32,21 +35,21 @@ func (j *CookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	j.Lock()
 	defer j.Unlock()
 	for _, cookie := range cookies {
-		j.cookies[cookie.Name] = cookie
+		j.cookies[cookie.Name] = *cookie
 	}
 }
 
 func (j *CookieJar) Cookies(u *url.URL) []*http.Cookie {
 	cookies := make([]*http.Cookie, 0)
-	for _, cookie := range j.cookies {
-		cookies = append(cookies, cookie)
+	for name := range j.cookies {
+		cookie := j.cookies[name]
+		cookies = append(cookies, &cookie)
 	}
 	return cookies
 }
 
 func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
-	jar := NewCookieJar()
-	jar.SetCookies(nil, []*http.Cookie{
+	return NewCookieJar([]http.Cookie{
 		{
 			Name:  "X-APPLE-WEBAUTH-TOKEN",
 			Value: accessToken,
@@ -56,7 +59,6 @@ func AuthenticatedJar(accessToken string, webauthUser string) *CookieJar {
 			Value: webauthUser,
 		},
 	})
-	return jar
 }
 
 type Drive struct {
@@ -71,16 +73,27 @@ func NewDrive(client http.Client) Drive {
 }
 
 type SessionData struct {
-	Username          string `json:"username"`
-	Password          string `json:"password"`
-	SessionToken      string `json:"sessionToken"`
-	AccountCountyCode string `json:"accountCountryCode"`
-	Scnt              string `json:"scnt"`
-	SessionId         string `json:"sessionId"`
-	TwoFactorToken    string `json:"twoFactorToken"`
+	Username          string        `json:"username"`
+	Password          string        `json:"password"`
+	SessionToken      string        `json:"sessionToken"`
+	AccountCountyCode string        `json:"accountCountryCode"`
+	Scnt              string        `json:"scnt"`
+	SessionId         string        `json:"sessionId"`
+	TwoFactorToken    string        `json:"twoFactorToken"`
+	Cookies           []http.Cookie `json:"Cookies"`
 }
 
-func newSessionData(headers http.Header) (*SessionData, error) {
+func (sessionData *SessionData) updateCookies(cookies []*http.Cookie) {
+	var relevantCookies []http.Cookie
+	for _, cookie := range cookies {
+		if cookie.Name == "X-APPLE-WEBAUTH-TOKEN" || cookie.Name == "X-APPLE-WEBAUTH-USER" {
+			relevantCookies = append(relevantCookies, *cookie)
+		}
+	}
+	*&sessionData.Cookies = relevantCookies
+}
+
+func newSessionData(headers http.Header, cookies []*http.Cookie) (*SessionData, error) {
 	sessionToken := headers.Get("X-Apple-Session-Token")
 	accountCountryCode := headers.Get("X-Apple-Id-Account-Country")
 	if sessionToken == "" || accountCountryCode == "" {
@@ -93,6 +106,7 @@ func newSessionData(headers http.Header) (*SessionData, error) {
 		SessionId:         headers.Get("X-Apple-ID-Session-Id"),
 		TwoFactorToken:    headers.Get("X-Apple-Twosv-Trust-Token"),
 	}
+	sessionData.updateCookies(cookies)
 	return sessionData, nil
 }
 
@@ -120,9 +134,13 @@ func RestoreSession(path string) (*Drive, error) {
 
 func newDriveForSession(sessionData SessionData) (*Drive, *SessionData, error) {
 	client := http.Client{}
-	client.Jar = NewCookieJar()
+	client.Jar = NewCookieJar(sessionData.Cookies)
 	drive := NewDrive(client)
-	requires2FA, err := drive.authenticate(sessionData)
+	err := drive.ValidateToken()
+	if err == nil {
+		return &drive, &sessionData, nil
+	}
+	requires2FA, newSessionData, err := drive.authenticate(sessionData)
 	if err != nil {
 		// Getting an error here probably means that the session-token is old, try to login using the sessionData, to get a new session instead
 		newSessionData, err := drive.loginUsingSession(sessionData)
@@ -134,7 +152,7 @@ func newDriveForSession(sessionData SessionData) (*Drive, *SessionData, error) {
 	if requires2FA {
 		return nil, nil, fmt.Errorf("Session requires 2fa, create a new instead")
 	}
-	return &drive, &sessionData, nil
+	return &drive, newSessionData, nil
 }
 
 func CreateNewSessionInteractive(port string, storagePath string) (*Drive, error) {
@@ -168,13 +186,13 @@ func createNewSessionInteractive(port string) (*Drive, *SessionData, error) {
 	}
 
 	client := http.Client{}
-	client.Jar = NewCookieJar()
+	client.Jar = NewCookieJar([]http.Cookie{})
 	drive := NewDrive(client)
 	sessionData, err := drive.login(username, password, []string{})
 	if err != nil {
 		return nil, nil, err
 	}
-	requires2FA, err := drive.authenticate(*sessionData)
+	requires2FA, newSessionData, err := drive.authenticate(*sessionData)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -193,7 +211,7 @@ func createNewSessionInteractive(port string) (*Drive, *SessionData, error) {
 		}
 		return newDriveForSession(*newSessionData)
 	} else {
-		return &drive, sessionData, nil
+		return &drive, newSessionData, nil
 	}
 }
 
@@ -258,7 +276,7 @@ func (drive *Drive) login(username string, password string, trustTokens []string
 	if err != nil {
 		return nil, err
 	}
-	return newSessionData(resp.Header)
+	return newSessionData(resp.Header, resp.Cookies())
 }
 
 type LoginRequest struct {
@@ -340,13 +358,13 @@ func (drive *Drive) trustSession(sessionData *SessionData) (*SessionData, error)
 	}
 	response := string(body)
 	if len(response) == 0 {
-		return newSessionData(resp.Header)
+		return newSessionData(resp.Header, resp.Cookies())
 	} else {
 		return nil, fmt.Errorf("Error when validating 2fa code: %v", response)
 	}
 }
 
-func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
+func (drive *Drive) authenticate(sessionData SessionData) (bool, *SessionData, error) {
 	payload := AuthenticateRequest{
 		AccountCountyCode: sessionData.AccountCountyCode,
 		DSWebAuthToken:    sessionData.SessionToken,
@@ -357,7 +375,7 @@ func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
 	json.NewEncoder(buf).Encode(payload)
 	req, err := http.NewRequest("POST", "https://setup.icloud.com/setup/ws/1/accountLogin", buf)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	req.Header.Add("Origin", "https://www.icloud.com")
 	req.Header.Add("Content-Type", "application/json")
@@ -365,22 +383,23 @@ func (drive *Drive) authenticate(sessionData SessionData) (bool, error) {
 
 	resp, err := drive.client.Do(req)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if resp.StatusCode != 200 {
-		return false, fmt.Errorf("Incorrect status code: %v", resp.StatusCode)
+		return false, nil, fmt.Errorf("Incorrect status code: %v", resp.StatusCode)
 	}
 	response := new(TokenResponse)
 	json.Unmarshal(body, &response)
 	if response == nil {
-		return false, fmt.Errorf("Unable to authenticate with token")
+		return false, nil, fmt.Errorf("Unable to authenticate with token")
 	}
 	requires2FA := response.DsInfo.HSAVersion == 2 && response.HSAChallengeRequired
-	return requires2FA, nil
+	sessionData.updateCookies(resp.Cookies())
+	return requires2FA, &sessionData, err
 }
 
 type AuthenticateRequest struct {
