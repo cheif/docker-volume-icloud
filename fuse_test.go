@@ -40,6 +40,8 @@ func TestWrite(t *testing.T) {
 		t.Error(err)
 	}
 
+	inode.ResetFileSystemCacheIfStale()
+
 	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
@@ -110,6 +112,8 @@ func TestEchoAndRead(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	inode.ResetFileSystemCacheIfStale()
 
 	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {

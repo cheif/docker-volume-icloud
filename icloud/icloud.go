@@ -548,6 +548,7 @@ func (drive *Drive) CheckIfHasNewChanges() (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		hasChanges = true
 		drive.continuationMarker = &enumerate.ContinuationMarker
 	}
 	return hasChanges, nil
