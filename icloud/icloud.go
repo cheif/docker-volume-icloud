@@ -107,7 +107,6 @@ func RestoreSession(path string) (*Drive, error) {
 		return nil, err
 	}
 
-	log.Println("sessionData", sessionData)
 	drive, newSession, err := newDriveForSession(sessionData)
 	if err != nil {
 		return nil, err
