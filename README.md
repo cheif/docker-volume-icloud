@@ -40,3 +40,5 @@ Since this relies on generating a session using the same mechanics as icloud.com
 
 # TODO
 - [x] It seems like files aren't properly updated when writing to them, this probably stems from the fact that iCloud will just create a new file, and update the pointer of the node to the new one, and we're not picking this up properly. We probably need to invalidate the reference to this node I guess?
+- [ ] Long files (> 2178 lines?) seems to get truncated
+- [ ] Shortening a file doesn't work

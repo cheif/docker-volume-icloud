@@ -537,6 +537,7 @@ func (drive *Drive) getNodeData(drivewsid string) (*Node, error) {
 	}
 	node := (*response)[0]
 
+	// TODO: For folders, use max(DateChanged) from children as DateChanged?
 	parent := &Node{
 		drivewsid:   node.Drivewsid,
 		docwsid:     node.Docwsid,
