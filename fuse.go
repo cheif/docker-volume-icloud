@@ -13,8 +13,9 @@ import (
 type iCloudInode struct {
 	fs.Inode
 
-	node  *icloud.Node
-	drive icloud.Drive
+	parent *iCloudInode
+	node   *icloud.Node
+	drive  icloud.Drive
 }
 
 // Node types must be InodeEmbedders
@@ -90,8 +91,9 @@ func (inode *iCloudInode) generateInode(ctx context.Context, node *icloud.Node) 
 	newNode := inode.NewInode(
 		ctx,
 		&iCloudInode{
-			node:  node,
-			drive: inode.drive,
+			node:   node,
+			drive:  inode.drive,
+			parent: inode,
 		},
 		stableAttr(node),
 	)
@@ -220,6 +222,12 @@ func (file *iCloudFile) Flush(ctx context.Context) syscall.Errno {
 		log.Printf("Error when flushing: %v", err)
 		// TODO: Probably wrong Errno here :/
 		return 1
+	}
+
+	// Notify parent that the content of this node has changed
+	parent := file.inode.parent
+	if parent != nil {
+		parent.ResetFileSystemCacheIfStale()
 	}
 	return 0
 }

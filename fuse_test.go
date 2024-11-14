@@ -40,8 +40,6 @@ func TestWrite(t *testing.T) {
 		t.Error(err)
 	}
 
-	inode.ResetFileSystemCacheIfStale()
-
 	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
 		t.Error(err)
@@ -60,6 +58,10 @@ func TestWrite(t *testing.T) {
 
 	if !statAfter.ModTime().After(statBefore.ModTime()) {
 		t.Errorf("ModTime hasn't changed, was: %s, now: %s", statBefore.ModTime(), statBefore.ModTime())
+	}
+
+	if int(statAfter.Size()) != len(expected) {
+		t.Errorf("Incorrect Size returned by Stat: %v, expected: %v\n", statAfter.Size(), len(expected))
 	}
 }
 
@@ -82,8 +84,6 @@ func TestTruncate(t *testing.T) {
 		t.Error(err)
 	}
 
-	inode.ResetFileSystemCacheIfStale()
-
 	before, err := readString(filename)
 	if err != nil {
 		t.Error(err)
@@ -97,8 +97,6 @@ func TestTruncate(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	inode.ResetFileSystemCacheIfStale()
 
 	after, err := readString(filename)
 	if err != nil {
@@ -170,8 +168,6 @@ func TestEchoAndRead(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	inode.ResetFileSystemCacheIfStale()
 
 	after, err := readString("/mnt/volumes/testfile.txt")
 	if err != nil {
