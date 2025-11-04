@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"time"
 
 	"github.com/cheif/docker-volume-icloud/icloud"
 	"github.com/emersion/go-webdav"
@@ -19,6 +21,10 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 	}
 	filesystem := &ICloudFileSystem{
 		drive: drive,
+		nodeCache: nodeCache{
+			hits: make(map[string]icloud.Node),
+			missing: []string{},
+		},
 	}
 	handler := webdav.Handler{FileSystem: filesystem}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +33,7 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 			fmt.Fprintln(w, "Telnet to :5000 to setup iCloud session")
 		} else {
 			// Everything is properly setup
+			filesystem.checkIfCacheIsStale()
 			handler.ServeHTTP(w, r)
 		}
 	}
@@ -34,6 +41,77 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 
 type ICloudFileSystem struct {
 	drive *icloud.Drive
+	nodeCache nodeCache
+}
+
+type nodeCache struct {
+	hits map[string]icloud.Node
+	missing []string
+	lastStaleCheck time.Time
+}
+
+func (fs *ICloudFileSystem) checkIfCacheIsStale() {
+	if fs.nodeCache.lastStaleCheck.Add(time.Second * 5).Before(time.Now()) {
+		// Check if we need to reset cache
+		hasChanges, _ := fs.drive.CheckIfHasNewChanges()
+		if hasChanges {
+			// Just wipe cache, no need to be smart
+			fs.nodeCache = nodeCache{
+				hits: make(map[string]icloud.Node),
+			missing: []string{},
+			}
+		}
+		fs.nodeCache.lastStaleCheck = time.Now()
+	}
+}
+
+func (c nodeCache) getCached(path string) (*icloud.Node, bool) {
+	if slices.Contains(c.missing, path) {
+		return nil, true
+	}
+	node := c.hits[path]
+	if (node != icloud.Node{}) {
+		return &node, false
+	}
+	return nil, false
+}
+
+func (fs *ICloudFileSystem) getCachedNode(path string) (*icloud.Node, error) {
+	path = filepath.Clean(path)
+	node, missing := fs.nodeCache.getCached(path)
+	if missing {
+		return nil, fmt.Errorf("No node at: %v", path)
+	}
+	if node != nil {
+		return node, nil
+	}
+	// We didn't find the node in the cache, but we might be able to find it through it's parent
+	parentName := filepath.Dir(path)
+	parent, _ := fs.nodeCache.getCached(parentName)
+	if parent != nil {
+		children, err := fs.drive.GetChildren(parent)
+		if err == nil {
+			// Cache all children
+			for _, child := range *children {
+				childPath := filepath.Join(parentName, child.Filename())
+				fs.nodeCache.hits[childPath] = child
+			}
+		}
+		node, _ := fs.nodeCache.getCached(path)
+		if node != nil {
+			return node, nil
+		}
+	} else {
+		// No cached parent, we need to fetch this from icloud
+		node, err := fs.drive.GetNode(path)
+		if err != nil {
+			return nil, err
+		}
+		fs.nodeCache.hits[path] = *node
+		return node, nil
+	}
+	fs.nodeCache.missing = append(fs.nodeCache.missing, path)
+	return nil, fmt.Errorf("No node at: %v", path)
 }
 
 func (fs *ICloudFileSystem) initiateInteractiveSession(sessionPath string) {
@@ -46,7 +124,7 @@ func (fs *ICloudFileSystem) initiateInteractiveSession(sessionPath string) {
 
 func (fs *ICloudFileSystem) Open(ctx context.Context, name string) (io.ReadCloser, error) {
 	fmt.Println("Open", name)
-	node, err := fs.drive.GetNode(name)
+	node, err := fs.getCachedNode(name)
 	if err != nil {
 		return nil, err
 	}
@@ -59,17 +137,16 @@ func (fs *ICloudFileSystem) Open(ctx context.Context, name string) (io.ReadClose
 
 func (fs *ICloudFileSystem) Stat(ctx context.Context, name string) (*webdav.FileInfo, error) {
 	fmt.Println("Stat", name)
-	node, err := fs.drive.GetNode(name)
+	node, err := fs.getCachedNode(name)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Node", node)
 	return createFileInfo(name, node), nil
 }
 
 func (fs *ICloudFileSystem) ReadDir(ctx context.Context, name string, recursive bool) ([]webdav.FileInfo, error) {
 	fmt.Println("ReadDir", name)
-	node, err := fs.drive.GetNode(name)
+	node, err := fs.getCachedNode(name)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +159,6 @@ func (fs *ICloudFileSystem) ReadDir(ctx context.Context, name string, recursive 
 		path := filepath.Join(name, node.Filename())
 		fileInfos = append(fileInfos, *createFileInfo(path, &node))
 	}
-	fmt.Println("Fileinfos", fileInfos)
 	return fileInfos, nil
 }
 
