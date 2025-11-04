@@ -698,12 +698,16 @@ func (drive *Drive) GetData(node *Node) ([]byte, error) {
 }
 
 func (drive *Drive) WriteData(node *Node, data []byte) error {
+	buf := bytes.NewBuffer(data)
+	return drive.WriteDataReader(node, buf)
+}
+
+func (drive *Drive) WriteDataReader(node *Node, reader io.Reader) error {
 	uploadData, err := drive.uploadFileData(node)
 	if err != nil {
 		return err
 	}
-	buf := bytes.NewBuffer(data)
-	req, err := http.NewRequest("POST", uploadData.Url, buf)
+	req, err := http.NewRequest("POST", uploadData.Url, reader)
 	resp, err := drive.client.Do(req)
 	if err != nil {
 		return err

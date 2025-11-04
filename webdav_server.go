@@ -175,7 +175,21 @@ func createFileInfo(path string, node *icloud.Node) *webdav.FileInfo {
 
 func (fs *ICloudFileSystem) Create(ctx context.Context, name string, body io.ReadCloser, opts *webdav.CreateOptions) (*webdav.FileInfo, bool, error) {
 	fmt.Println("Create", name)
-	return nil, false, fmt.Errorf("Not implemented")
+	node, err := fs.getCachedNode(name)
+	if err != nil {
+		// We only allow updating file contents for now
+		return nil, false, err
+	}
+	err = fs.drive.WriteDataReader(node, body)
+	if err != nil {
+		return nil, false, err
+	}
+	fs.checkIfCacheIsStale()
+	node, err = fs.getCachedNode(name)
+	if err != nil {
+		return nil, false, err
+	}
+	return createFileInfo(name, node), false, nil
 }
 
 func (fs *ICloudFileSystem) RemoveAll(ctx context.Context, name string, opts *webdav.RemoveAllOptions) error {
