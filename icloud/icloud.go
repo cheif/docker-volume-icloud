@@ -525,6 +525,7 @@ func (drive *Drive) getNodeData(drivewsid string) (*Node, error) {
 			Size:        item.Size,
 			Extension:   item.Extension,
 			Etag:        item.Etag,
+			Type:        item.NodeType(),
 			DateCreated: item.DateCreated,
 			DateChanged: item.DateChanged,
 		})
@@ -868,6 +869,15 @@ type NodeDataItem struct {
 	DateChanged time.Time `json:"dateChanged"`
 }
 
+func (item NodeDataItem) NodeType() NodeType {
+	if item.Type == "FILE" {
+		return NodeTypeFile
+	} else {
+		// iCloud has various folder-like types, so we'll default to it being a folder.
+		return NodeTypeFolder
+	}
+}
+
 type DataToken struct {
 	Url string `json:"url"`
 }
@@ -885,12 +895,20 @@ type Node struct {
 	Size        uint64
 	Extension   *string
 	Etag        string
+	Type        NodeType
 	DateCreated time.Time
 	DateChanged time.Time
 
 	parent   *Node
 	children *[]Node
 }
+
+type NodeType int
+
+const (
+	NodeTypeFolder NodeType = iota
+	NodeTypeFile
+)
 
 func (node *Node) Hash() uint64 {
 	h := fnv.New64a()

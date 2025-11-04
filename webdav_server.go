@@ -91,7 +91,7 @@ func createFileInfo(path string, node *icloud.Node) *webdav.FileInfo {
 		Path:     path,
 		Size:     int64(node.Size),
 		ModTime:  node.DateChanged,
-		IsDir:    node.Extension == nil,
+		IsDir:    node.Type == icloud.NodeTypeFolder,
 		MIMEType: "test",
 		ETag:     node.Etag,
 	}
