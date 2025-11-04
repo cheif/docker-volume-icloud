@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.20 as builder
+FROM golang:1.22-alpine3.20 AS builder
 WORKDIR /go/src/github.com/cheif/docker-volume-icloud
 RUN set -ex \
     && apk add --no-cache --virtual .build-deps \
@@ -9,7 +9,7 @@ COPY . .
 RUN go install --ldflags '-extldflags "-static"'
 CMD ["/go/bin/docker-volume-icloud"]
 
-FROM golang:1.22-alpine3.20 as test-environment
+FROM golang:1.22-alpine3.20 AS test-environment
 WORKDIR /go/src/github.com/cheif/docker-volume-icloud
 RUN set -ex \
     && apk add --no-cache --virtual .build-deps \
