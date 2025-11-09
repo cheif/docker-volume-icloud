@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/cheif/docker-volume-icloud/icloud"
@@ -22,8 +21,7 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 	filesystem := &ICloudFileSystem{
 		drive: drive,
 		nodeCache: nodeCache{
-			hits: make(map[string]icloud.Node),
-			missing: []string{},
+			nodes: make(map[string]*cachedNode),
 		},
 	}
 	handler := webdav.Handler{FileSystem: filesystem}
@@ -45,10 +43,15 @@ type ICloudFileSystem struct {
 }
 
 type nodeCache struct {
-	hits map[string]icloud.Node
-	missing []string
+	nodes map[string]*cachedNode
 	lastStaleCheck time.Time
 }
+
+type cachedNode struct {
+	node *icloud.Node
+	data  *[]byte
+}
+
 
 func (fs *ICloudFileSystem) checkIfCacheIsStale() {
 	if fs.nodeCache.lastStaleCheck.Add(time.Second * 5).Before(time.Now()) {
@@ -57,47 +60,44 @@ func (fs *ICloudFileSystem) checkIfCacheIsStale() {
 		if hasChanges {
 			// Just wipe cache, no need to be smart
 			fs.nodeCache = nodeCache{
-				hits: make(map[string]icloud.Node),
-			missing: []string{},
+				nodes: make(map[string]*cachedNode),
 			}
 		}
 		fs.nodeCache.lastStaleCheck = time.Now()
 	}
 }
 
-func (c nodeCache) getCached(path string) (*icloud.Node, bool) {
-	if slices.Contains(c.missing, path) {
-		return nil, true
-	}
-	node := c.hits[path]
-	if (node != icloud.Node{}) {
-		return &node, false
-	}
-	return nil, false
+func (c nodeCache) getCached(path string) *cachedNode {
+	return c.nodes[path]
 }
 
-func (fs *ICloudFileSystem) getCachedNode(path string) (*icloud.Node, error) {
+func (fs *ICloudFileSystem) getCachedNode(path string) (*cachedNode, error) {
 	path = filepath.Clean(path)
-	node, missing := fs.nodeCache.getCached(path)
-	if missing {
-		return nil, fmt.Errorf("No node at: %v", path)
-	}
+	node := fs.nodeCache.getCached(path)
 	if node != nil {
-		return node, nil
+		if node.node != nil {
+			return node, nil
+		} else {
+			return nil, fmt.Errorf("No node at: %v", path)
+		}
 	}
 	// We didn't find the node in the cache, but we might be able to find it through it's parent
 	parentName := filepath.Dir(path)
-	parent, _ := fs.nodeCache.getCached(parentName)
+	parent := fs.nodeCache.getCached(parentName)
 	if parent != nil {
-		children, err := fs.drive.GetChildren(parent)
+		children, err := fs.drive.GetChildren(parent.node)
 		if err == nil {
 			// Cache all children
 			for _, child := range *children {
 				childPath := filepath.Join(parentName, child.Filename())
-				fs.nodeCache.hits[childPath] = child
+				node := child
+				cached := cachedNode{
+					node: &node,
+				}
+				fs.nodeCache.nodes[childPath] = &cached
 			}
 		}
-		node, _ := fs.nodeCache.getCached(path)
+		node := fs.nodeCache.getCached(path)
 		if node != nil {
 			return node, nil
 		}
@@ -107,10 +107,13 @@ func (fs *ICloudFileSystem) getCachedNode(path string) (*icloud.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		fs.nodeCache.hits[path] = *node
-		return node, nil
+		cached := &cachedNode{
+			node: node,
+		}
+		fs.nodeCache.nodes[path] = cached
+		return cached, nil
 	}
-	fs.nodeCache.missing = append(fs.nodeCache.missing, path)
+	fs.nodeCache.nodes[path] = &cachedNode{}
 	return nil, fmt.Errorf("No node at: %v", path)
 }
 
@@ -128,10 +131,15 @@ func (fs *ICloudFileSystem) Open(ctx context.Context, name string) (io.ReadClose
 	if err != nil {
 		return nil, err
 	}
-	data, err := fs.drive.GetData(node)
+	if node.data != nil {
+		// Use data that's already cached
+		return io.NopCloser(bytes.NewReader(*node.data)), nil
+	}
+	data, err := fs.drive.GetData(node.node)
 	if err != nil {
 		return nil, err
 	}
+	node.data = &data
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
@@ -141,7 +149,7 @@ func (fs *ICloudFileSystem) Stat(ctx context.Context, name string) (*webdav.File
 	if err != nil {
 		return nil, err
 	}
-	return createFileInfo(name, node), nil
+	return createFileInfo(name, node.node), nil
 }
 
 func (fs *ICloudFileSystem) ReadDir(ctx context.Context, name string, recursive bool) ([]webdav.FileInfo, error) {
@@ -150,7 +158,7 @@ func (fs *ICloudFileSystem) ReadDir(ctx context.Context, name string, recursive 
 	if err != nil {
 		return nil, err
 	}
-	children, err := fs.drive.GetChildren(node)
+	children, err := fs.drive.GetChildren(node.node)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +188,7 @@ func (fs *ICloudFileSystem) Create(ctx context.Context, name string, body io.Rea
 		// We only allow updating file contents for now
 		return nil, false, err
 	}
-	err = fs.drive.WriteDataReader(node, body)
+	err = fs.drive.WriteDataReader(node.node, body)
 	if err != nil {
 		return nil, false, err
 	}
@@ -189,7 +197,7 @@ func (fs *ICloudFileSystem) Create(ctx context.Context, name string, body io.Rea
 	if err != nil {
 		return nil, false, err
 	}
-	return createFileInfo(name, node), false, nil
+	return createFileInfo(name, node.node), false, nil
 }
 
 func (fs *ICloudFileSystem) RemoveAll(ctx context.Context, name string, opts *webdav.RemoveAllOptions) error {
