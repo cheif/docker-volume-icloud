@@ -21,5 +21,6 @@ RUN mkdir /mnt/state /mnt/volumes
 FROM alpine
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 COPY --from=builder /go/bin/docker-volume-icloud .
+EXPOSE 5000
 EXPOSE 8080
 CMD ["/docker-volume-icloud"]
