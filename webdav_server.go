@@ -38,20 +38,19 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 }
 
 type ICloudFileSystem struct {
-	drive *icloud.Drive
+	drive     *icloud.Drive
 	nodeCache nodeCache
 }
 
 type nodeCache struct {
-	nodes map[string]*cachedNode
+	nodes          map[string]*cachedNode
 	lastStaleCheck time.Time
 }
 
 type cachedNode struct {
 	node *icloud.Node
-	data  *[]byte
+	data *[]byte
 }
-
 
 func (fs *ICloudFileSystem) checkIfCacheIsStale() {
 	if fs.nodeCache.lastStaleCheck.Add(time.Second * 5).Before(time.Now()) {
@@ -120,7 +119,8 @@ func (fs *ICloudFileSystem) getCachedNode(path string) (*cachedNode, error) {
 func (fs *ICloudFileSystem) initiateInteractiveSession(sessionPath string) {
 	drive, err := icloud.CreateNewSessionInteractive(":5000", sessionPath)
 	if err != nil {
-		panic("Handle this better")
+		fmt.Printf("Error when trying to create interactive session: %v", err)
+		panic("Handle this better:")
 	}
 	fs.drive = drive
 }
