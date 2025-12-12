@@ -170,7 +170,10 @@ func CreateNewSessionInteractive(port string, storagePath string) (*Drive, error
 
 func createNewSessionInteractive(port string) (*Drive, *SessionData, error) {
 	log.Println("Creating interactive session over telnet")
-	sock, _ := net.Listen("tcp", port)
+	sock, err := net.Listen("tcp", port)
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := sock.Accept()
 	defer conn.Close()
 	if err != nil {
