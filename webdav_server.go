@@ -28,7 +28,7 @@ func NewICloudFileSystemHandler(sessionPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if filesystem.drive == nil {
 			go filesystem.initiateInteractiveSession(sessionPath)
-			fmt.Fprintln(w, "Telnet to :5000 to setup iCloud session")
+			fmt.Fprintln(w, "Telnet to :5001 to setup iCloud session")
 		} else {
 			// Everything is properly setup
 			filesystem.checkIfCacheIsStale()
@@ -118,7 +118,7 @@ func (fs *ICloudFileSystem) getCachedNode(path string) (*cachedNode, error) {
 }
 
 func (fs *ICloudFileSystem) initiateInteractiveSession(sessionPath string) {
-	drive, err := icloud.CreateNewSessionInteractive(":5000", sessionPath)
+	drive, err := icloud.CreateNewSessionInteractive(":5001", sessionPath)
 	if err != nil {
 		panic("Handle this better")
 	}
